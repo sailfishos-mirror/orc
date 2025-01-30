@@ -16,7 +16,7 @@ runnable_targets = []
 # Enable per-target runs only for Intel
 if cpu_family == 'x86' or cpu_family == 'x86_64'
   foreach i : enabled_targets
-    if ['mmx', 'sse'].contains(i)
+    if ['mmx', 'sse', 'avx'].contains(i)
       runnable_targets += [i]
     endif
   endforeach
