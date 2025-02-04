@@ -11,23 +11,7 @@
 #include <orc/orcx86insn.h>
 #include <orc/orcsse.h>
 #include <orc/orcsseinsn.h>
-
-#define ORC_SSE_INSN_TYPE_SSE_REG32M_IMM8 (\
-  ORC_X86_INSN_OPERAND_REG_REGM_IMM |        \
-  ORC_X86_INSN_OPERAND_OP2_32 |              \
-  ORC_X86_INSN_OPERAND_OP3_8                 \
-), ORC_SSE_INSN_OPERAND_OP1_XMM
-
-#define ORC_SSE_INSN_TYPE_SSE_REGM64 (\
-  ORC_X86_INSN_OPERAND_REG_REGM |     \
-  ORC_X86_INSN_OPERAND_OP2_64         \
-), ORC_SSE_INSN_OPERAND_OP1_XMM
-
-#define ORC_SSE_INSN_TYPE_SSE_REGM (\
-  ORC_X86_INSN_OPERAND_REG_REGM |   \
-  ORC_X86_INSN_OPERAND_OP2_32 |     \
-  ORC_X86_INSN_OPERAND_OP2_64       \
-), ORC_SSE_INSN_OPERAND_OP1_XMM
+#include <orc/orcsse-private.h>
 
 typedef struct _OrcSSEInsnOp {
   char name[16];
