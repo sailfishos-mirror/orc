@@ -27,6 +27,7 @@
 #define X86_VEX_vvvv_MASK (0xF << 3)
 #define X86_VEX_2_BYTES 0xc5
 #define X86_VEX_3_BYTES 0xc4
+#define X86_EVEX_BYTES 0x62
 #define X86_MODRM(mod, rm, reg) ((((mod)&3)<<6)|(((rm)&7)<<0)|(((reg)&7)<<3))
 #define X86_SIB(ss, ind, reg) ((((ss)&3)<<6)|(((ind)&7)<<3)|((reg)&7))
 
@@ -172,6 +173,7 @@ orc_x86_insn_output_opcode_branch_asm (OrcCompiler *p, OrcX86Insn *xinsn)
 }
 
 /* FIXME handle the error at the caller */
+/* TODO put this properly at orcx86.c */
 static const char *
 orc_x86_get_simd_regname (OrcX86Insn *xinsn, OrcCompiler *p, int reg, int idx)
 {
@@ -194,25 +196,66 @@ orc_x86_get_simd_regname (OrcX86Insn *xinsn, OrcCompiler *p, int reg, int idx)
   return "ERROR";
 }
 
-static void
-orc_x86_emit_modrm_memoffset (OrcCompiler *compiler, int offset, int src, int dest)
+/* TODO put this properly at orcx86.c */
+static orc_bool
+orc_x86_get_regnum_full (int reg, int *regnum)
 {
-  if (offset == 0 && src != compiler->exec_reg && src != X86_EBP && src != X86_R13) {
-    if (src == X86_ESP || src == X86_R12) {
-      *compiler->codeptr++ = X86_MODRM(0, 4, dest);
-      *compiler->codeptr++ = X86_SIB(0, 4, src);
+  if (reg >= X86_EAX && reg < X86_EAX + 16) {
+    *regnum = reg - ORC_GP_REG_BASE;
+    return TRUE;
+  }
+
+#if ENABLE_TARGET_MMX
+  if (reg >= X86_MM0 && reg < X86_MM0 + 16) {
+    *regnum = reg - X86_MM0;
+    return TRUE;
+  }
+#endif
+#if ENABLE_TARGET_SSE
+  if (reg >= X86_XMM0 && reg < X86_XMM0 + 16) {
+    *regnum = reg - X86_XMM0;
+    return TRUE;
+  }
+#endif
+#if ENABLE_TARGET_AVX
+  if (reg >= X86_YMM0 && reg < X86_YMM0 + 16) {
+    *regnum = reg - X86_YMM0;
+    return TRUE;
+  }
+#endif
+  *regnum = ORC_REG_INVALID;
+  return FALSE;
+}
+
+static void
+orc_x86_emit_modrm_memoffset (OrcCompiler *compiler, OrcX86InsnDispType disp,
+    int offset, int src, int dest)
+{
+  if (disp == ORC_X86_INSN_DISP_TYPE_0) {
+    if (src != compiler->exec_reg && src != X86_EBP && src != X86_R13) {
+      if (src == X86_ESP || src == X86_R12) {
+        /* Mode [SIB] */
+        *compiler->codeptr++ = X86_MODRM(0, 4, dest);
+        *compiler->codeptr++ = X86_SIB(0, 4, src);
+      } else {
+        *compiler->codeptr++ = X86_MODRM(0, src, dest);
+      }
     } else {
-      *compiler->codeptr++ = X86_MODRM(0, src, dest);
+      disp = ORC_X86_INSN_DISP_TYPE_8;
     }
-  } else if (offset >= -128 && offset < 128) {
+  }
+
+  if (disp == ORC_X86_INSN_DISP_TYPE_8 || disp == ORC_X86_INSN_DISP_TYPE_8N) {
     *compiler->codeptr++ = X86_MODRM(1, src, dest);
     if (src == X86_ESP || src == X86_R12) {
+      /* Mode [SIB+disp8] */
       *compiler->codeptr++ = X86_SIB(0, 4, src);
     }
     *compiler->codeptr++ = (offset & 0xff);
-  } else {
+  } else if (disp == ORC_X86_INSN_DISP_TYPE_32) {
     *compiler->codeptr++ = X86_MODRM(2, src, dest);
     if (src == X86_ESP || src == X86_R12) {
+      /* Mode [SIB+disp32] */
       *compiler->codeptr++ = X86_SIB(0, 4, src);
     }
     *compiler->codeptr++ = (offset & 0xff);
@@ -224,23 +267,33 @@ orc_x86_emit_modrm_memoffset (OrcCompiler *compiler, int offset, int src, int de
 
 /* FIXME rename this */
 static void
-orc_x86_emit_modrm_memindex2 (OrcCompiler *compiler, int offset,
-    int src, int src_index, int shift, int dest)
+orc_x86_emit_modrm_memindex2 (OrcCompiler *compiler, OrcX86InsnDispType disp,
+    int offset, int src, int src_index, int shift, int dest)
 {
-  if (offset == 0) {
-    *compiler->codeptr++ = X86_MODRM(0, 4, dest);
-    *compiler->codeptr++ = X86_SIB(shift, src_index, src);
-  } else if (offset >= -128 && offset < 128) {
-    *compiler->codeptr++ = X86_MODRM(1, 4, dest);
-    *compiler->codeptr++ = X86_SIB(shift, src_index, src);
-    *compiler->codeptr++ = (offset & 0xff);
-  } else {
-    *compiler->codeptr++ = X86_MODRM(2, 4, dest);
-    *compiler->codeptr++ = X86_SIB(shift, src_index, src);
-    *compiler->codeptr++ = (offset & 0xff);
-    *compiler->codeptr++ = ((offset>>8) & 0xff);
-    *compiler->codeptr++ = ((offset>>16) & 0xff);
-    *compiler->codeptr++ = ((offset>>24) & 0xff);
+  switch (disp) {
+    /* Mode [SIB] */
+    case ORC_X86_INSN_DISP_TYPE_0:
+      *compiler->codeptr++ = X86_MODRM(0, 4, dest);
+      *compiler->codeptr++ = X86_SIB(shift, src_index, src);
+      break;
+
+    /* Mode [SIB+disp8] */
+    case ORC_X86_INSN_DISP_TYPE_8:
+    case ORC_X86_INSN_DISP_TYPE_8N:
+      *compiler->codeptr++ = X86_MODRM(1, 4, dest);
+      *compiler->codeptr++ = X86_SIB(shift, src_index, src);
+      *compiler->codeptr++ = (offset & 0xff);
+      break;
+
+    /* Mode [SIB+disp32] */
+    case ORC_X86_INSN_DISP_TYPE_32:
+      *compiler->codeptr++ = X86_MODRM(2, 4, dest);
+      *compiler->codeptr++ = X86_SIB(shift, src_index, src);
+      *compiler->codeptr++ = (offset & 0xff);
+      *compiler->codeptr++ = ((offset>>8) & 0xff);
+      *compiler->codeptr++ = ((offset>>16) & 0xff);
+      *compiler->codeptr++ = ((offset>>24) & 0xff);
+      break;
   }
 }
 
@@ -379,6 +432,18 @@ orc_x86_insn_output_opcode_other_stack_asm (OrcCompiler *p, OrcX86Insn *xinsn)
       first = FALSE;
     else
       strcat (operands_str, ", ");
+
+    /* Add the mask, if any */
+    if (!i && xinsn->k) {
+      char k_operand[10] = {0};
+      sprintf (k_operand, "{%%%s}", orc_x86_get_simd_regname (xinsn, p, xinsn->k, 0));
+      strcat (op_str, k_operand);
+
+      /* Add the zero bit, if set */
+      if (xinsn->zero)
+        strcat (op_str, "{z}");
+    }
+
     strcat (operands_str, op_str);
   }
   ORC_ASM_CODE (p,"  %s %s\n", xinsn->name, operands_str);
@@ -543,6 +608,94 @@ orc_x86_insn_output_immediate (OrcCompiler *p, const OrcX86Insn *xinsn)
   }
 }
 
+static int
+orc_x86_insn_operand_size_to_pow2 (OrcX86InsnOperandSize size)
+{
+  switch (size) {
+    case ORC_X86_INSN_OPERAND_SIZE_8:
+      return 0;
+    case ORC_X86_INSN_OPERAND_SIZE_16:
+      return 1;
+    case ORC_X86_INSN_OPERAND_SIZE_32:
+      return 2;
+    case ORC_X86_INSN_OPERAND_SIZE_64:
+      return 3;
+    default:
+      ORC_ERROR ("Unsupported size of %d", size);
+      return -1;
+  }
+}
+
+/*
+ * Vol 1. Ch. 15.  15.6.5 Compressed disp8*N encoding
+ * Vol 2. Ch. 2. 2.7.5 Compressed Displacement support in EVEX
+ */
+static int
+orc_x86_insn_evex_get_disp_type (const OrcX86Insn *xinsn, OrcX86InsnDispType *disp)
+{
+  int scale = 0;
+
+  switch (xinsn->tuple_type) {
+    case ORC_X86_INSN_TUPLE_TYPE_FULL_MEM:
+      switch (xinsn->prefix) {
+        case ORC_X86_INSN_PREFIX_EVEX128:
+          scale = 4;
+          break;
+        case ORC_X86_INSN_PREFIX_EVEX256:
+          scale = 5;
+          break;
+        case ORC_X86_INSN_PREFIX_EVEX512:
+          scale = 6;
+          break;
+        default:
+          ORC_ERROR ("Unsupported prefix %d", xinsn->prefix);
+          break;
+      }
+      break;
+
+    case ORC_X86_INSN_TUPLE_TYPE_T1_SCALAR:
+      scale = orc_x86_insn_operand_size_to_pow2 (xinsn->mem_size);
+      break; 
+
+    default:
+      ORC_ERROR ("Unsupported tuple type %d", xinsn->tuple_type);
+      break;
+  }
+  /* Check that we can actually scale */
+  if (xinsn->offset % (1 << scale)) {
+    *disp = ORC_X86_INSN_DISP_TYPE_32;
+    return xinsn->offset;
+  } else {
+    int offset = xinsn->offset >> scale;
+    /* Check that we don't overflow signed 8 bits */
+    if (offset >= -128 && offset < 128) {
+      *disp = ORC_X86_INSN_DISP_TYPE_8N;
+      return xinsn->offset >> scale;
+    } else {
+      *disp = ORC_X86_INSN_DISP_TYPE_32;
+      return xinsn->offset;
+    }
+  }
+}
+
+static int
+orc_x86_insn_get_disp_type (const OrcX86Insn *xinsn, OrcX86InsnDispType *disp)
+{
+  if (!xinsn->offset) {
+    *disp = ORC_X86_INSN_DISP_TYPE_0;
+    return xinsn->offset;
+  } else if (xinsn->prefix >= ORC_X86_INSN_PREFIX_EVEX128 &&
+      xinsn->prefix <= ORC_X86_INSN_PREFIX_EVEX512) {
+      return orc_x86_insn_evex_get_disp_type (xinsn, disp);
+  } else if (xinsn->offset >= -128 && xinsn->offset < 128) {
+    *disp = ORC_X86_INSN_DISP_TYPE_8;
+    return xinsn->offset;
+  } else {
+    *disp = ORC_X86_INSN_DISP_TYPE_32;
+    return xinsn->offset;
+  }
+}
+
 static void
 orc_x86_insn_output_modrm (OrcCompiler *p, const OrcX86Insn *xinsn)
 {
@@ -555,10 +708,12 @@ orc_x86_insn_output_modrm (OrcCompiler *p, const OrcX86Insn *xinsn)
     case ORC_X86_INSN_ENCODING_MI:
       if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_REG)
         orc_x86_emit_modrm_reg (p, xinsn->operands[0].reg, xinsn->extension);
-      else if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_OFF)
-        orc_x86_emit_modrm_memoffset (p, xinsn->offset, xinsn->operands[0].reg,
+      else if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_OFF) {
+        OrcX86InsnDispType disp;
+        int offset = orc_x86_insn_get_disp_type (xinsn, &disp);
+        orc_x86_emit_modrm_memoffset (p, disp, offset, xinsn->operands[0].reg,
             xinsn->extension);
-      else
+      } else
         ORC_ERROR ("M Encoding from wrong operand type %d", xinsn->operands[0].type);
       break;
 
@@ -567,42 +722,60 @@ orc_x86_insn_output_modrm (OrcCompiler *p, const OrcX86Insn *xinsn)
       if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_REG)
         orc_x86_emit_modrm_reg (p, xinsn->operands[0].reg,
             xinsn->operands[1].reg);
-      else if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_OFF)
-        orc_x86_emit_modrm_memoffset (p, xinsn->offset, xinsn->operands[0].reg,
-            xinsn->operands[1].reg);
-      else if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_IDX)
-        orc_x86_emit_modrm_memindex2 (p, xinsn->offset, xinsn->operands[0].reg,
-            xinsn->index_reg, xinsn->shift, xinsn->operands[1].reg);
+      else {
+        OrcX86InsnDispType disp;
+        int offset = orc_x86_insn_get_disp_type (xinsn, &disp);
+        if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_OFF)
+          orc_x86_emit_modrm_memoffset (p, disp, offset,
+              xinsn->operands[0].reg, xinsn->operands[1].reg);
+        else if (xinsn->operands[0].type == ORC_X86_INSN_OPERAND_TYPE_IDX)
+          orc_x86_emit_modrm_memindex2 (p, disp, offset,
+              xinsn->operands[0].reg, xinsn->index_reg, xinsn->shift,
+              xinsn->operands[1].reg);
+      }
       break;
 
     case ORC_X86_INSN_ENCODING_VMI:
       orc_x86_emit_modrm_reg (p, xinsn->operands[1].reg, xinsn->extension);
       break;
 
+    case ORC_X86_INSN_ENCODING_RVR:
     case ORC_X86_INSN_ENCODING_RVM:
     case ORC_X86_INSN_ENCODING_RVMI:
     case ORC_X86_INSN_ENCODING_RVMR:
       if (xinsn->operands[2].type == ORC_X86_INSN_OPERAND_TYPE_REG)
         orc_x86_emit_modrm_reg (p, xinsn->operands[2].reg, xinsn->operands[0].reg);
-      else if (xinsn->operands[2].type == ORC_X86_INSN_OPERAND_TYPE_OFF)
-        orc_x86_emit_modrm_memoffset (p, xinsn->offset, xinsn->operands[2].reg,
-            xinsn->operands[0].reg);
-      else if (xinsn->operands[2].type == ORC_X86_INSN_OPERAND_TYPE_IDX)
-        orc_x86_emit_modrm_memindex2 (p, xinsn->offset, xinsn->operands[2].reg,
-            xinsn->index_reg, xinsn->shift, xinsn->operands[0].reg);
+      else {
+        OrcX86InsnDispType disp;
+        int offset = orc_x86_insn_get_disp_type (xinsn, &disp);
+        if (xinsn->operands[2].type == ORC_X86_INSN_OPERAND_TYPE_OFF)
+          orc_x86_emit_modrm_memoffset (p, disp, offset,
+              xinsn->operands[2].reg, xinsn->operands[0].reg);
+        else if (xinsn->operands[2].type == ORC_X86_INSN_OPERAND_TYPE_IDX)
+          orc_x86_emit_modrm_memindex2 (p, disp, offset,
+              xinsn->operands[2].reg, xinsn->index_reg, xinsn->shift,
+              xinsn->operands[0].reg);
+      }
       break;
 
+    case ORC_X86_INSN_ENCODING_RR:
+    case ORC_X86_INSN_ENCODING_RRI:
     case ORC_X86_INSN_ENCODING_RM:
     case ORC_X86_INSN_ENCODING_RMI:
       if (xinsn->operands[1].type == ORC_X86_INSN_OPERAND_TYPE_REG)
         orc_x86_emit_modrm_reg (p, xinsn->operands[1].reg,
             xinsn->operands[0].reg);
-      if (xinsn->operands[1].type == ORC_X86_INSN_OPERAND_TYPE_OFF)
-        orc_x86_emit_modrm_memoffset (p, xinsn->offset, xinsn->operands[1].reg, 
-          xinsn->operands[0].reg);
-      else if (xinsn->operands[1].type == ORC_X86_INSN_OPERAND_TYPE_IDX)
-        orc_x86_emit_modrm_memindex2 (p, xinsn->offset, xinsn->operands[1].reg,
-            xinsn->index_reg, xinsn->shift, xinsn->operands[0].reg);
+      else {
+        OrcX86InsnDispType disp;
+        int offset = orc_x86_insn_get_disp_type (xinsn, &disp);
+        if (xinsn->operands[1].type == ORC_X86_INSN_OPERAND_TYPE_OFF)
+          orc_x86_emit_modrm_memoffset (p, disp, offset,
+            xinsn->operands[1].reg, xinsn->operands[0].reg);
+        else if (xinsn->operands[1].type == ORC_X86_INSN_OPERAND_TYPE_IDX)
+          orc_x86_emit_modrm_memindex2 (p, disp, offset,
+              xinsn->operands[1].reg, xinsn->index_reg, xinsn->shift,
+              xinsn->operands[0].reg);
+      }
       break;
 
     /* Immediate only, will be handled later */
@@ -741,6 +914,7 @@ orc_x86_insn_get_vex_vvvv (const OrcX86Insn *xinsn)
     case ORC_X86_INSN_ENCODING_RVM:
     case ORC_X86_INSN_ENCODING_RVMI:
     case ORC_X86_INSN_ENCODING_RVMR: 
+    case ORC_X86_INSN_ENCODING_RVR: 
       vvvv = (~xinsn->operands[1].reg & 0xF) << 3 & X86_VEX_vvvv_MASK;
       break;
     default:
@@ -795,24 +969,18 @@ orc_x86_insn_output_vex2 (OrcCompiler *p, const OrcX86Insn *xinsn)
   *p->codeptr++ = byte2;
 }
 
-/*
- * The 3 byte version
- * 1  1  0  0  0  1  0  0
- * R̅  X̅  B̅ m4 m3 m2 m1 m0
- * W v̅3 v̅2 v̅1 v̅0  L p1 p0
- *
- * m4..m0 are used to code opcode escape byte sequences
- */
-static void
-orc_x86_insn_output_vex3 (OrcCompiler *p, const OrcX86Insn *xinsn)
+/* R̅  X̅  B̅ m4 m3 m2 m1 m0 */
+static unsigned char
+orc_x86_insn_get_vex3_byte2 (OrcCompiler *p, const OrcX86Insn *xinsn)
 {
   unsigned char byte2 = 0;
-  unsigned char byte3 = 0;
 
   if (p->is_64bit) {
     switch (xinsn->encoding) {
       case ORC_X86_INSN_ENCODING_RM:
       case ORC_X86_INSN_ENCODING_RMI:
+      case ORC_X86_INSN_ENCODING_RR:
+      case ORC_X86_INSN_ENCODING_RRI:
         byte2 |= orc_x86_insn_get_vex_rex (p, xinsn->operands[0].reg, 0, xinsn->operands[1].reg);
         break;
   
@@ -833,9 +1001,10 @@ orc_x86_insn_output_vex3 (OrcCompiler *p, const OrcX86Insn *xinsn)
       case ORC_X86_INSN_ENCODING_RVM:
       case ORC_X86_INSN_ENCODING_RVMI:
       case ORC_X86_INSN_ENCODING_RVMR:
+      case ORC_X86_INSN_ENCODING_RVR:
         byte2 |= orc_x86_insn_get_vex_rex (p, xinsn->operands[0].reg, 0, xinsn->operands[2].reg);
         break;
-  
+
       default:
         break;
     }
@@ -847,12 +1016,20 @@ orc_x86_insn_output_vex3 (OrcCompiler *p, const OrcX86Insn *xinsn)
   // Escape sequence, we use the same representation as the expected value
   byte2 |= xinsn->opcode_escape;
 
-  // Set REX.W if forced
+  return byte2;
+}
+
+/* W v̅3 v̅2 v̅1 v̅0  L p1 p0 */
+static unsigned char
+orc_x86_insn_get_vex3_byte3 (OrcCompiler *p, const OrcX86Insn *xinsn)
+{
+  unsigned char byte3 = 0;
+
+  // Set REX.W if needed or forced
   if (xinsn->opcode_flags & ORC_X86_INSN_OPCODE_FLAG_VEX_W1 ||
     orc_x86_insn_need_rex_w (xinsn)) {
     byte3 |= 1 << 7;
   }
-  // TODO Clear REX.W if forced
 
   // Section 2.3.5.6, 2.3.6
   // Instruction Operand Encoding and VEX.vvvv, ModR/M
@@ -864,6 +1041,26 @@ orc_x86_insn_output_vex3 (OrcCompiler *p, const OrcX86Insn *xinsn)
 
   // Opcode prefix, we use the same representation as the expected value
   byte3 |= xinsn->opcode_prefix;
+
+  return byte3;
+}
+
+/*
+ * The 3 byte version
+ * 1  1  0  0  0  1  0  0
+ * R̅  X̅  B̅ m4 m3 m2 m1 m0
+ * W v̅3 v̅2 v̅1 v̅0  L p1 p0
+ *
+ * m4..m0 are used to code opcode escape byte sequences
+ */
+static void
+orc_x86_insn_output_vex3 (OrcCompiler *p, const OrcX86Insn *xinsn)
+{
+  unsigned char byte2;
+  unsigned char byte3;
+
+  byte2 = orc_x86_insn_get_vex3_byte2 (p, xinsn);
+  byte3 = orc_x86_insn_get_vex3_byte3 (p, xinsn);
 
   *p->codeptr++ = X86_VEX_3_BYTES;
   *p->codeptr++ = byte2;
@@ -921,6 +1118,181 @@ done:
     orc_x86_insn_output_vex2 (p, xinsn);
 }
 
+/* Similar to orc_x86_insn_get_vex_rex but taking into account R̅' and X
+ * when not SIB is used */
+static unsigned char
+orc_x86_insn_get_evex_rex (OrcCompiler *compiler, int reg, int sib, int rm)
+{
+  unsigned char rex = 0x80 | 0x40 | 0x20 | 0x10;
+
+  if (compiler->is_64bit) {
+    int regnum;
+    int sibnum;
+    int rmnum;
+
+    if (orc_x86_get_regnum_full (reg, &regnum)) {
+      if (regnum & 8) rex &= ~0x80; // ModR/M[reg] expands to 64-bit mode operands (R)
+      if (regnum & 16) rex &= ~0x10; // Extended R to support 32 registers
+    }
+
+    if (orc_x86_get_regnum_full (rm, &rmnum)) {
+      if (rmnum & 8) rex &= ~0x20; // ModR/M[r/m] or extension expandds to 64-bit mode operands (B)
+    }
+
+    if (orc_x86_get_regnum_full (sib, &sibnum)) {
+        if (sibnum & 8) rex &= ~0x40; // SIB index field extension (X)
+    } else {
+      if (rmnum & 16) rex &= ~0x40; // Extended X to support 32 registers
+    }
+  }
+
+  return rex;
+}
+
+/* R̅  X̅  B̅  R̅' 0 m2 m1 m0 */
+static unsigned char
+orc_x86_insn_get_evex_byte2 (OrcCompiler *p, const OrcX86Insn *xinsn)
+{
+  unsigned char byte2 = 0;
+
+  if (p->is_64bit) {
+    switch (xinsn->encoding) {
+      case ORC_X86_INSN_ENCODING_RM:
+      case ORC_X86_INSN_ENCODING_RMI:
+      case ORC_X86_INSN_ENCODING_RR:
+      case ORC_X86_INSN_ENCODING_RRI:
+        byte2 |= orc_x86_insn_get_evex_rex (p, xinsn->operands[0].reg, 0, xinsn->operands[1].reg);
+        break;
+  
+      case ORC_X86_INSN_ENCODING_MI:
+      case ORC_X86_INSN_ENCODING_MR:
+      case ORC_X86_INSN_ENCODING_MRI:
+        byte2 |= orc_x86_insn_get_evex_rex (p, xinsn->operands[1].reg, 0, xinsn->operands[0].reg);
+        break;
+  
+      case ORC_X86_INSN_ENCODING_O:
+        byte2 |= orc_x86_insn_get_evex_rex (p, 0, 0, xinsn->operands[0].reg);
+        break;
+  
+      case ORC_X86_INSN_ENCODING_VMI:
+        byte2 |= orc_x86_insn_get_evex_rex (p, 0, 0, xinsn->operands[1].reg);
+        break;
+  
+      case ORC_X86_INSN_ENCODING_RVM:
+      case ORC_X86_INSN_ENCODING_RVMI:
+      case ORC_X86_INSN_ENCODING_RVMR:
+      case ORC_X86_INSN_ENCODING_RVR:
+        byte2 |= orc_x86_insn_get_evex_rex (p, xinsn->operands[0].reg, 0, xinsn->operands[2].reg);
+        break;
+
+      default:
+        break;
+    }
+  } else {
+    // REX.R,X must be force set in 32-bit
+    byte2 |= 1 << 7;
+    byte2 |= 1 << 6;
+  }
+  // Escape sequence, we use the same representation as the expected value
+  byte2 |= xinsn->opcode_escape;
+
+  return byte2;
+} 
+
+/* W v̅3 v̅2 v̅1 v̅0  1 p1 p0
+ * z  L' L  b V̅' a2 a1 a0
+ */ 
+static void
+orc_x86_insn_get_evex_byte34 (OrcCompiler *p, const OrcX86Insn *xinsn,
+    unsigned char *byte3, unsigned char *byte4)
+{
+  unsigned char b3 = 0x4;
+  unsigned char b4 = 0;
+  unsigned char vvvv = X86_VEX_vvvv_UNUSED;
+  unsigned char Vp = 0x8;
+  int vnum;
+
+  // Set REX.W if needed or forced
+  if (xinsn->opcode_flags & ORC_X86_INSN_OPCODE_FLAG_VEX_W1 ||
+    orc_x86_insn_need_rex_w (xinsn)) {
+    b3 |= 1 << 7;
+  }
+  // Set REX.W if needed or forced
+
+  // Section 2.3.5.6, 2.3.6
+  // Instruction Operand Encoding and VEX.vvvv, ModR/M
+  switch (xinsn->encoding) {
+    case ORC_X86_INSN_ENCODING_VMI:
+      if (orc_x86_get_regnum_full (xinsn->operands[0].reg, &vnum)) {
+        vvvv = (~vnum & 0xF) << 3 & X86_VEX_vvvv_MASK;
+        if (vnum & 0x10)
+            Vp = 0x0;
+      }
+      break;
+    case ORC_X86_INSN_ENCODING_RVM:
+    case ORC_X86_INSN_ENCODING_RVMI:
+    case ORC_X86_INSN_ENCODING_RVMR: 
+    case ORC_X86_INSN_ENCODING_RVR: 
+      if (orc_x86_get_regnum_full (xinsn->operands[1].reg, &vnum)) {
+        vvvv = (~vnum & 0xF) << 3 & X86_VEX_vvvv_MASK;
+        if (vnum & 0x10)
+          Vp = 0x0;
+      }
+      break;
+
+    default:
+      break;
+  }
+  b3 |= vvvv;
+
+  // Opcode prefix, we use the same representation as the expected value
+  b3 |= xinsn->opcode_prefix;
+
+  // Set vector length
+  if (xinsn->prefix == ORC_X86_INSN_PREFIX_EVEX256)
+    b4 |= 1 << 5;
+  else if (xinsn->prefix == ORC_X86_INSN_PREFIX_EVEX512)
+    b4 |= 1 << 6;
+  // The extended vvvv
+  b4 |= Vp;
+
+  /* The mask and merge/zero mode */
+  if (xinsn->k != ORC_REG_INVALID) {
+    int k;
+    if (orc_x86_get_regnum_full (xinsn->k, &k))
+      b4 |= (k & 0x7);
+    if (xinsn->zero)
+      b4 |= (1 << 7);
+  }
+  /* TODO b and L'L as rounding */
+  
+  *byte3 = b3;
+  *byte4 = b4;
+}
+
+/*
+ * EVEX prefix is 4 bytes having
+ * 0  1  1  0  0  0  1  0
+ * R̅  X̅  B̅  R̅' 0 m2 m1 m0
+ * W v̅3 v̅2 v̅1 v̅0  1 p1 p0
+ * z  L' L  b V̅' a2 a1 a0 
+ */
+static void
+orc_x86_insn_output_evex (OrcCompiler *c, const OrcX86Insn *xinsn)
+{
+  unsigned char byte2 = 0;
+  unsigned char byte3 = 0;
+  unsigned char byte4 = 0;
+
+  byte2 = orc_x86_insn_get_evex_byte2 (c, xinsn);
+  orc_x86_insn_get_evex_byte34 (c, xinsn, &byte3, &byte4);
+
+  *c->codeptr++ = X86_EVEX_BYTES;
+  *c->codeptr++ = byte2;
+  *c->codeptr++ = byte3;
+  *c->codeptr++ = byte4;
+}
+
 static void
 orc_x86_insn_output_machine_code (OrcCompiler *p, const OrcX86Insn *xinsn)
 {
@@ -936,6 +1308,15 @@ orc_x86_insn_output_machine_code (OrcCompiler *p, const OrcX86Insn *xinsn)
     case ORC_X86_INSN_PREFIX_VEX128:
     case ORC_X86_INSN_PREFIX_VEX256:
       orc_x86_insn_output_vex (p, xinsn);
+      orc_x86_insn_output_opcode (p, xinsn);
+      orc_x86_insn_output_modrm (p, xinsn);
+      orc_x86_insn_output_immediate (p, xinsn);
+      break;
+
+    case ORC_X86_INSN_PREFIX_EVEX128:
+    case ORC_X86_INSN_PREFIX_EVEX256:
+    case ORC_X86_INSN_PREFIX_EVEX512:
+      orc_x86_insn_output_evex (p, xinsn);
       orc_x86_insn_output_opcode (p, xinsn);
       orc_x86_insn_output_modrm (p, xinsn);
       orc_x86_insn_output_immediate (p, xinsn);
@@ -1110,7 +1491,7 @@ orc_x86_get_output_insn (OrcCompiler *p)
 
 orc_bool
 orc_x86_insn_encoding_from_operands (OrcX86InsnEncoding *encoding, int operands,
-    OrcX86InsnPrefix prefix)
+    orc_bool has_extension, orc_bool mask_only)
 {
   OrcX86InsnEncoding e;
 
@@ -1137,12 +1518,23 @@ orc_x86_insn_encoding_from_operands (OrcX86InsnEncoding *encoding, int operands,
 
   /* Check second operand */
   if (operands & ORC_X86_INSN_OPERAND_OP2_MEM) {
+    if (e != ORC_X86_INSN_ENCODING_O) {
+      ORC_ERROR ("Unsupported previous encoding %s for OP2 MEM",
+          orc_x86_insn_encoding_to_string (e));
+      goto error;
+    }
     e = ORC_X86_INSN_ENCODING_RM;
   } else if (operands & ORC_X86_INSN_OPERAND_OP2_REG) {
-    if (e == ORC_X86_INSN_ENCODING_O || e == ORC_X86_INSN_ENCODING_M) {
+    if (e == ORC_X86_INSN_ENCODING_M) {
       e = ORC_X86_INSN_ENCODING_MR;
+    } else if (e == ORC_X86_INSN_ENCODING_O) {
+      if (mask_only)
+        e = ORC_X86_INSN_ENCODING_RR;
+      else
+        e = ORC_X86_INSN_ENCODING_RM;
     } else {
-      ORC_ERROR ("Unsupported previous encoding %d for OP2 MEM", e);
+      ORC_ERROR ("Unsupported previous encoding %s for OP2 REG",
+          orc_x86_insn_encoding_to_string (e));
       goto error;
     }
   } else if (operands & ORC_X86_INSN_OPERAND_OP2_IMM) {
@@ -1150,41 +1542,44 @@ orc_x86_insn_encoding_from_operands (OrcX86InsnEncoding *encoding, int operands,
       e = ORC_X86_INSN_ENCODING_MI;
     } else if (e == ORC_X86_INSN_ENCODING_O) {
       e = ORC_X86_INSN_ENCODING_OI;
+      if (has_extension)
+        e = ORC_X86_INSN_ENCODING_MI;
     } else {
-      ORC_ERROR ("Unsupported previous encoding %d for OP2 IMM", e);
+      ORC_ERROR ("Unsupported previous encoding %s for OP2 IMM",
+          orc_x86_insn_encoding_to_string (e));
       goto error;
     }
   }
 
   /* Only two operands */
-  if (!(operands & ORC_X86_INSN_OPERAND_OP3))
+  if (!(operands & ORC_X86_INSN_OPERAND_OP3)) {
     goto done;
+  }
 
   /* Check third operand */
   if (operands & ORC_X86_INSN_OPERAND_OP3_IMM) {
     if (e == ORC_X86_INSN_ENCODING_MR) {
       e = ORC_X86_INSN_ENCODING_MRI;
-      /* For VEX, MRI is encoded as VRI as long as M is also a R (i.e not M) */
-      if ((prefix == ORC_X86_INSN_PREFIX_VEX128 || 
-          prefix == ORC_X86_INSN_PREFIX_VEX256) &&
-          !(operands & ORC_X86_INSN_OPERAND_OP1_MEM)) {
-        e = ORC_X86_INSN_ENCODING_VMI;
-      }
     } else if (e == ORC_X86_INSN_ENCODING_RM) {
       e = ORC_X86_INSN_ENCODING_RMI;
+      if (has_extension)
+        e = ORC_X86_INSN_ENCODING_VMI;
+    } else if (e == ORC_X86_INSN_ENCODING_RR) {
+        e = ORC_X86_INSN_ENCODING_RRI;
     } else {
-      ORC_ERROR ("Unsupported previous encoding %d for OP3 IMM", e);
+      ORC_ERROR ("Unsupported previous encoding %s for OP3 IMM",
+          orc_x86_insn_encoding_to_string (e));
       goto error;
     }
   } else if (operands & ORC_X86_INSN_OPERAND_OP3_REG) {
-    /* For VEX, three reg opcode is encoded as RVM */
-    if ((prefix == ORC_X86_INSN_PREFIX_VEX128 || 
-        prefix == ORC_X86_INSN_PREFIX_VEX256) &&
-        (e == ORC_X86_INSN_ENCODING_MR ||
-        e == ORC_X86_INSN_ENCODING_RM)) {
+    if (e == ORC_X86_INSN_ENCODING_MR ||
+        e == ORC_X86_INSN_ENCODING_RM) {
       e = ORC_X86_INSN_ENCODING_RVM;
+    } else if (e == ORC_X86_INSN_ENCODING_RR) {
+      e = ORC_X86_INSN_ENCODING_RVR;
     } else {
-      ORC_ERROR ("Unsupported previous encoding %d for OP3 REG", e);
+      ORC_ERROR ("Unsupported previous encoding %s for OP3 REG",
+          orc_x86_insn_encoding_to_string (e));
       goto error;
     }
   }
@@ -1197,14 +1592,16 @@ orc_x86_insn_encoding_from_operands (OrcX86InsnEncoding *encoding, int operands,
     if (e == ORC_X86_INSN_ENCODING_RVM) {
       e = ORC_X86_INSN_ENCODING_RVMI;
     } else {
-      ORC_ERROR ("Unsupported previous encoding %d for OP4 IMM", e);
+      ORC_ERROR ("Unsupported previous encoding %s for OP4 IMM",
+          orc_x86_insn_encoding_to_string (e));
       goto error;
     }
   } else if (operands & ORC_X86_INSN_OPERAND_OP4_REG) {
     if (e == ORC_X86_INSN_ENCODING_RVM) {
       e = ORC_X86_INSN_ENCODING_RVMR;
     } else {
-      ORC_ERROR ("Unsupported previous encoding %d for OP4 REG", e);
+      ORC_ERROR ("Unsupported previous encoding %s for OP4 REG",
+          orc_x86_insn_encoding_to_string (e));
       goto error;
     }
   }
@@ -1923,7 +2320,8 @@ orc_x86_emit_dec_memoffset (OrcCompiler *compiler, int size,
   }
 }
 
-void orc_x86_emit_rep_movs (OrcCompiler *compiler, int size)
+void
+orc_x86_emit_rep_movs (OrcCompiler *compiler, int size)
 {
   switch (size) {
     case 1:
@@ -1935,5 +2333,50 @@ void orc_x86_emit_rep_movs (OrcCompiler *compiler, int size)
     case 4:
       orc_x86_emit_cpuinsn_none (compiler, ORC_X86_rep_movsl);
       break;
+  }
+}
+
+const char *
+orc_x86_insn_encoding_to_string (OrcX86InsnEncoding enc)
+{
+  switch (enc) {
+    case ORC_X86_INSN_ENCODING_NONE:
+      return "N";
+    case ORC_X86_INSN_ENCODING_ZO:
+      return "ZO";
+    case ORC_X86_INSN_ENCODING_O:
+      return "O";
+    case ORC_X86_INSN_ENCODING_I:
+      return "I";
+    case ORC_X86_INSN_ENCODING_M:
+      return "M";
+    case ORC_X86_INSN_ENCODING_OI:
+      return "OI";
+    case ORC_X86_INSN_ENCODING_MI:
+      return "MI";
+    case ORC_X86_INSN_ENCODING_MR:
+      return "MR";
+    case ORC_X86_INSN_ENCODING_MRI:
+      return "MRI";
+    case ORC_X86_INSN_ENCODING_VMI:
+      return "VMI";
+    case ORC_X86_INSN_ENCODING_RM:
+      return "RM";
+    case ORC_X86_INSN_ENCODING_RMI:
+      return "RMI";
+    case ORC_X86_INSN_ENCODING_RVM:
+      return "RVM";
+    case ORC_X86_INSN_ENCODING_RVMI:
+      return "RVMI";
+    case ORC_X86_INSN_ENCODING_RVMR:
+      return "RVMR";
+    case ORC_X86_INSN_ENCODING_RR:
+      return "RR";
+    case ORC_X86_INSN_ENCODING_RVR:
+      return "RVR";
+    case ORC_X86_INSN_ENCODING_RRI:
+      return "RRI";
+    default:
+      return "UNK";
   }
 }
