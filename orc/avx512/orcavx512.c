@@ -211,4 +211,5 @@ orc_avx512_init (void)
 {
   OrcTarget *t;
   t = orc_avx512_target_init ();
+  orc_avx512_rules_init (t);
 }

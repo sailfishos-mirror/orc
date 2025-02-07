@@ -12,6 +12,10 @@ ORC_INTERNAL const char * orc_avx512_get_flag_name (OrcTargetAVX512Flags flag);
 /* orcavx512target.c */
 ORC_INTERNAL OrcTarget * orc_avx512_target_init (void);
 
+/* orcavx512compiler.c */
+ORC_INTERNAL int orc_avx512_compiler_get_mask_reg (OrcCompiler *c, orc_bool mask_op);
+ORC_INTERNAL void orc_avx512_compiler_release_mask_reg (OrcCompiler *c, int reg);
+
 /* orcavx512insn.c */
 /* This extends OrcAVXInsnOperandFlag */
 typedef enum _OrcAVX512InsnOperandFlag {
@@ -371,6 +375,9 @@ typedef enum _OrcAVX512InsnOperandFlag {
 
 ORC_INTERNAL void orc_avx512_insn_emit_stmxcsr (OrcCompiler *c, int offset, int reg);
 ORC_INTERNAL void orc_avx512_insn_emit_ldmxcsr (OrcCompiler *c, int offset, int reg);
+
+/* orcavx512rules.c */
+ORC_INTERNAL void orc_avx512_rules_init (OrcTarget *target);
 
 ORC_END_DECLS
 
