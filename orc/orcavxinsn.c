@@ -635,7 +635,8 @@ orc_avx_insn_from_opcode (OrcX86Insn *insn, int index, const OrcAVXInsnOp *op)
       ORC_AVX_INSN_OPERAND_OP4_YMM))
     insn->prefix = ORC_X86_INSN_PREFIX_VEX256;
   insn->extension = op->extension;
-  if (!orc_x86_insn_encoding_from_operands (&insn->encoding, op->operands, insn->prefix)) {
+  if (!orc_x86_insn_encoding_from_operands (&insn->encoding, op->operands,
+      op->extension, FALSE)) {
     ORC_ERROR ("Can not encode %s (%d) opcode", op->name, index);
   }
 }
