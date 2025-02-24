@@ -209,17 +209,36 @@ orc_avx512_target_get_shift (int size)
 static void
 orc_avx512_target_set_mxcsr (OrcCompiler *c)
 {
-#if 0
-  orc_avx512_set_mxcsr (c);
-#endif
+  orc_avx512_insn_emit_stmxcsr (c,
+      ORC_STRUCT_OFFSET (OrcExecutor, params[ORC_VAR_A4]),
+      c->exec_reg);
+
+  orc_x86_emit_mov_memoffset_reg (c, 4,
+      ORC_STRUCT_OFFSET (OrcExecutor, params[ORC_VAR_A4]),
+      c->exec_reg, c->gp_tmpreg);
+
+  orc_x86_emit_mov_reg_memoffset (c, 4, c->gp_tmpreg,
+      ORC_STRUCT_OFFSET (OrcExecutor, params[ORC_VAR_C1]),
+      c->exec_reg);
+
+  orc_x86_emit_cpuinsn_imm_reg (c, ORC_X86_or_imm32_rm, 4, 0x8040,
+      c->gp_tmpreg);
+
+  orc_x86_emit_mov_reg_memoffset (c, 4, c->gp_tmpreg,
+      ORC_STRUCT_OFFSET (OrcExecutor, params[ORC_VAR_A4]),
+      c->exec_reg);
+
+  orc_avx512_insn_emit_ldmxcsr (c,
+      ORC_STRUCT_OFFSET (OrcExecutor, params[ORC_VAR_A4]),
+      c->exec_reg);
 }
 
 static void
 orc_avx512_target_restore_mxcsr (OrcCompiler *c)
 {
-#if 0
-  orc_avx512_restore_mxcsr (c);
-#endif
+  orc_avx512_insn_emit_ldmxcsr (c,
+      ORC_STRUCT_OFFSET (OrcExecutor, params[ORC_VAR_A4]),
+      c->exec_reg);
 }
 
 OrcTarget *
