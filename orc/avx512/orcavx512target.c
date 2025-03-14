@@ -2,9 +2,11 @@
 #include "config.h"
 #endif
 
+#include <inttypes.h>
 #include <orc/orcx86.h>
 #include <orc/orcx86-private.h>
 #include <orc/avx512/orcavx512.h>
+#include <orc/avx512/orcavx512insn.h>
 #include <orc/avx512/orcavx512-private.h>
 #include <orc/orcinternal.h>
 
@@ -157,17 +159,108 @@ orc_avx512_target_reduce_accumulator (OrcCompiler *compiler, int i, OrcVariable 
   ORC_ERROR ("Missing implementation");
 }
 
-void
-orc_avx512_target_load_constant (OrcCompiler *compiler, int reg, int size,
-    orc_uint64 value)
+static void
+orc_avx512_target_load_constant_full (OrcCompiler *c, int reg,
+    OrcConstant *cnst, int size)
 {
-  ORC_ERROR ("Missing implementation");
+  int i;
+  int n;
+  int mask;
+  int mask_value = 1;
+
+  switch (size) {
+    case 32:
+      mask_value = 17; // 00010001b
+      n = 4;
+      break;
+    case 16:
+      mask_value = 85; // 01010101b
+      n = 2;
+      break;
+    case 0:
+      if (cnst->v[7].i || cnst->v[6].i || cnst->v[5].i || cnst->v[4].i) {
+        /* 512-bits */
+        n = 8;
+      } else if (cnst->v[3].i || cnst->v[2].i) {
+        /* 256-bits */
+        n = 4;
+      } else {
+        /* 128-bits */
+        n = 2;
+      }
+    break;
+
+    default:
+      ORC_ERROR ("Unsupported size %d", size);
+      return;
+  }
+
+  mask = orc_avx512_compiler_get_mask_reg (c, TRUE);
+  if (mask == ORC_REG_INVALID) {
+    ORC_ERROR ("No mask register available to load constant");
+    return;
+  }
+
+  /* Initialize the mask */
+  orc_x86_emit_mov_imm_reg (c, 4, mask_value, c->gp_tmpreg);
+  orc_avx512_insn_emit_size (c, ORC_AVX512_INSN_kmovw_k_r, 4, c->gp_tmpreg,
+      ORC_REG_INVALID, ORC_REG_INVALID, mask, ORC_REG_INVALID, FALSE);
+
+
+  if (!c->is_64bit) {
+    ORC_ERROR ("Unsupported constant loading in 32-bits");
+    goto done;
+  }
+
+  for (i = 0; i < n; i++) {
+    orc_x86_emit_mov_imm_reg64 (c, 8, cnst->v[i].i, c->gp_tmpreg);
+    orc_avx512_insn_emit_x86_vpbroadcastq (c, c->gp_tmpreg, reg, mask, FALSE);
+    orc_avx512_insn_emit_imm (c, ORC_AVX512_INSN_kshiftlb,
+        ORC_X86_INSN_OPERAND_SIZE_NONE, 1, mask, ORC_REG_INVALID, mask,
+        ORC_REG_INVALID, FALSE);
+  }
+done:
+  orc_avx512_compiler_release_mask_reg (c, mask);
 }
 
 static void
-orc_avx512_target_load_constant_long (OrcCompiler *compiler, int reg, OrcConstant *constant)
+orc_avx512_target_load_constant_long (OrcCompiler *c, int reg, OrcConstant *cnst)
 {
-  ORC_ERROR ("Missing implementation");
+  switch (cnst->type) {
+    case ORC_CONST_ZERO:
+      orc_avx512_insn_emit_vpxord (c, reg, reg, reg, ORC_REG_INVALID, FALSE);
+      break;
+    case ORC_CONST_SPLAT_B:
+      orc_x86_emit_mov_imm_reg (c, 4, cnst->v[0].x8[0], c->gp_tmpreg);
+      orc_avx512_insn_emit_x86_vpbroadcastb (c, c->gp_tmpreg, reg, ORC_REG_INVALID, FALSE);
+      break;
+    case ORC_CONST_SPLAT_W:
+      orc_x86_emit_mov_imm_reg (c, 4, cnst->v[0].x4[0], c->gp_tmpreg);
+      orc_avx512_insn_emit_x86_vpbroadcastw (c, c->gp_tmpreg, reg, ORC_REG_INVALID, FALSE);
+      break;
+    case ORC_CONST_SPLAT_L:
+      orc_x86_emit_mov_imm_reg (c, 4, cnst->v[0].x2[0], c->gp_tmpreg);
+      orc_avx512_insn_emit_x86_vpbroadcastd (c, c->gp_tmpreg, reg, ORC_REG_INVALID, FALSE);
+      break;
+    case ORC_CONST_SPLAT_Q:
+      /* FIXME until vpbroadcastq */
+      {
+        OrcConstant r;
+        orc_constant_resolve (cnst, &r, 64);
+        orc_avx512_target_load_constant_full (c, reg, &r, 0);
+      }
+      break;
+    case ORC_CONST_SPLAT_DQ:
+      orc_avx512_target_load_constant_full (c, reg, cnst, 16);
+      break;
+
+    case ORC_CONST_SPLAT_QQ:
+      orc_avx512_target_load_constant_full (c, reg, cnst, 32);
+      break;
+    case ORC_CONST_FULL:
+      orc_avx512_target_load_constant_full (c, reg, cnst, 0);
+      break;
+  }
 }
 
 static void
@@ -258,7 +351,7 @@ orc_avx512_target_init (void)
     orc_avx512_target_loop_shift,
     orc_avx512_target_init_accumulator,
     orc_avx512_target_reduce_accumulator,
-    orc_avx512_target_load_constant,
+    NULL,
     orc_avx512_target_load_constant_long,
     orc_avx512_target_move_register_to_memoffset,
     orc_avx512_target_move_memoffset_to_register,
