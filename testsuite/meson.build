@@ -11,6 +11,11 @@ tests = [
   'test_parse'
 ]
 
+benchmarks = [
+  'cmp_opcodes_sys',
+  'cmp_parse'
+]
+
 runnable_targets = []
 
 # Enable per-target runs only for Intel
@@ -32,7 +37,7 @@ if cpu_family == 'loongarch64'
 endif
 
 foreach test : tests
-  t = executable(test, test + '.c',
+  t = executable(test, [test + '.c', 'common.c'],
                  gnu_symbol_visibility: 'inlineshidden',
                  install: false,
                  dependencies: [libm, orc_dep, orc_test_dep])
@@ -93,5 +98,14 @@ subdir('orcc')
 
 opt_benchmarks = get_option('benchmarks')
 if not opt_benchmarks.disabled()
+  foreach benchmark : benchmarks
+    b = executable(benchmark, [benchmark + '.c', 'common.c'],
+            install: false,
+            dependencies: [libm, orc_dep, orc_test_dep])
+    benchmark(benchmark, b,
+      env: {
+        'testfile': meson.current_source_dir() + '/test.orc',
+      })
+  endforeach
   subdir('benchmorc')
 endif

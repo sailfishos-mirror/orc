@@ -142,9 +142,11 @@ ORC_API OrcTarget *  orc_target_get_by_name (const char *target_name);
 #ifdef ORC_ENABLE_UNSTABLE_API
 ORC_API OrcRuleSet * orc_target_add_rule_set (OrcTarget *target,
     OrcOpcodeSet *opcode_set, unsigned int required_flags);
+ORC_API OrcTarget * orc_target_get_by_idx (int idx);
+ORC_API int orc_target_n_get (void);
+ORC_API orc_bool orc_target_is_executable (OrcTarget *target);
 #endif
 
 ORC_END_DECLS
 
 #endif
-
