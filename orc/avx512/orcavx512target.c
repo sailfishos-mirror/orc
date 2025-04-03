@@ -145,18 +145,81 @@ orc_avx512_target_loop_shift (int max_var_size)
 }
 
 static void
-orc_avx512_target_init_accumulator (OrcCompiler *compiler, OrcVariable *var)
+orc_avx512_target_init_accumulator (OrcCompiler *c, OrcVariable *var)
 {
-  ORC_ERROR ("Missing implementation");
-#if 0
-  orc_avx512_emit_pxor (compiler, var->alloc, var->alloc, var->alloc);
-#endif
+  orc_avx512_insn_emit_vpxord (c, var->alloc, var->alloc, var->alloc,
+      ORC_REG_INVALID, FALSE);
 }
 
+/* Duplicate higer half_size bytes at the less significant half_size bytes */
 static void
-orc_avx512_target_reduce_accumulator (OrcCompiler *compiler, int i, OrcVariable *var)
+orc_avx512_compiler_dup_high_half (OrcCompiler *c, int half_size, int src,
+    int dest)
 {
-  ORC_ERROR ("Missing implementation");
+  switch (half_size) {
+    case 32:
+      orc_avx512_insn_emit_vextracti64x4 (c, 1, src, ORC_AVX512_AVX_REG (dest),
+          ORC_REG_INVALID, FALSE);
+      break;
+    case 16:
+      orc_avx512_insn_avx_emit_vextracti32x4 (c, 1, ORC_AVX512_AVX_REG (src),
+          ORC_AVX512_SSE_REG (dest), ORC_REG_INVALID, FALSE);
+      break;
+    case 8:
+      orc_avx512_insn_sse_emit_vpshufd (c, ORC_AVX_SSE_SHUF (3, 2, 3, 2),
+          ORC_AVX512_SSE_REG (src), ORC_AVX512_SSE_REG (dest), ORC_REG_INVALID,
+          FALSE);
+      break;
+    case 4:
+      orc_avx512_insn_sse_emit_vpshufd (c, ORC_AVX_SSE_SHUF (1, 1, 1, 1),
+          ORC_AVX512_SSE_REG (src), ORC_AVX512_SSE_REG (dest), ORC_REG_INVALID,
+          FALSE);
+      break;
+    case 2:
+      orc_avx512_insn_sse_emit_vpshuflw (c, ORC_AVX_SSE_SHUF (1, 1, 1, 1),
+          ORC_AVX512_SSE_REG (src), ORC_AVX512_SSE_REG (dest), ORC_REG_INVALID,
+          FALSE);
+      break;
+    default:
+      ORC_ERROR ("Unsupported size %d", half_size);
+      break;
+  }
+}
+
+/* TODO use the proper reg size */
+static void
+orc_avx512_insn_emit_add (OrcCompiler *c, int size, int a, int b)
+{
+  switch (size) {
+    case 4:
+      orc_avx512_insn_emit_vpaddd (c, a, b, a, ORC_REG_INVALID, FALSE);
+      break;
+
+    case 2:
+      orc_avx512_insn_emit_vpaddw (c, a, b, a, ORC_REG_INVALID, FALSE);
+      break;
+  }
+}
+
+/* The register needs to be reduced horizontally by adding the values
+ * For that we swap halves and add
+ */ 
+static void
+orc_avx512_target_reduce_accumulator (OrcCompiler *c, int i, OrcVariable *var)
+{
+  int reg = var->alloc;
+  int tmp = orc_compiler_get_temp_reg (c);
+  int half_size;
+
+  for (half_size = 32; half_size >= var->size; half_size = half_size / 2) {
+    orc_avx512_compiler_dup_high_half (c, half_size, reg, tmp);
+    /* Do the operation on reg, tmp -> reg */
+    orc_avx512_insn_emit_add (c, var->size, reg, tmp);
+  }
+  orc_avx512_insn_emit_mov_reg_memoffset (c, var->size, reg,
+      ORC_STRUCT_OFFSET (OrcExecutor, accumulators[i - ORC_VAR_A1]),
+      c->exec_reg, var->is_aligned, var->is_uncached);
+  orc_compiler_release_temp_reg (c, reg);
 }
 
 static void
@@ -223,6 +286,9 @@ done:
   orc_avx512_compiler_release_mask_reg (c, mask);
 }
 
+/* Nice source of constants loading
+ * http://0x80.pl/notesen/2023-01-19-avx512-consts.html
+ */
 static void
 orc_avx512_target_load_constant_long (OrcCompiler *c, int reg, OrcConstant *cnst)
 {
