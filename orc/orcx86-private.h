@@ -42,4 +42,18 @@ ORC_INTERNAL void orc_x86_emit_align (OrcCompiler *p, int align_shift);
 ORC_INTERNAL void orc_x86_emit_label (OrcCompiler *p, int label);
 ORC_INTERNAL const char * orc_x86_insn_encoding_to_string (OrcX86InsnEncoding enc);
 
+ORC_INTERNAL orc_bool orc_x86_insn_validate_operands (OrcCompiler *c,
+    int operands, OrcX86InsnOperandSize size, int dest, int src0, int src1,
+    int src2, orc_int64 imm, OrcX86InsnValidateSIMDOperand validate,
+    void *data);
+
+ORC_INTERNAL void orc_x86_insn_set_imm (OrcX86Insn *xinsn,
+    unsigned int operands, OrcX86InsnOperandSize size, orc_int64 imm);
+ORC_INTERNAL void orc_x86_insn_set_mem (OrcX86Insn *xinsn,
+    unsigned int operands, OrcX86InsnOperandSize size,
+    OrcX86InsnOperandType type, int dest, int src0, int src1, int src2);
+ORC_INTERNAL void orc_x86_insn_set_operands (OrcX86Insn *xinsn,
+    unsigned int operands, OrcX86InsnOperandSize size,
+    int dest, int src0, int src1, int src2);
+
 ORC_END_DECLS

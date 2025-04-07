@@ -1416,6 +1416,10 @@ orc_x86_insn_validate_operand1_size (OrcX86InsnOperandSize size, int operands)
       !(operands & ORC_X86_INSN_OPERAND_OP1_64)) {
     ORC_ERROR ("Wrong size of %d", size);
     return FALSE;
+  } else if (size == ORC_X86_INSN_OPERAND_SIZE_NONE &&
+      operands & ORC_X86_INSN_OPERAND_OP1_NON_SIMD) {
+    ORC_ERROR ("SIMD register size for non SIMD register");
+    return FALSE;
   }
 
   return TRUE;
@@ -1440,13 +1444,15 @@ orc_x86_insn_validate_operand2_size (OrcX86InsnOperandSize size, int operands)
       !(operands & ORC_X86_INSN_OPERAND_OP2_64)) {
     ORC_ERROR ("Wrong size of %d", size);
     return FALSE;
+  } else if (size == ORC_X86_INSN_OPERAND_SIZE_NONE &&
+      operands & ORC_X86_INSN_OPERAND_OP2_NON_SIMD) {
+    ORC_ERROR ("SIMD register size for non SIMD register");
+    return FALSE;
   }
 
   return TRUE;
 }
 
-#if 0
-/* FIXME for later, once all validations are properly handled */
 static orc_bool
 orc_x86_insn_validate_operand3_size (OrcX86InsnOperandSize size, int operands)
 {
@@ -1466,11 +1472,30 @@ orc_x86_insn_validate_operand3_size (OrcX86InsnOperandSize size, int operands)
       !(operands & ORC_X86_INSN_OPERAND_OP3_64)) {
     ORC_ERROR ("Wrong size of %d", size);
     return FALSE;
+  } else if (size == ORC_X86_INSN_OPERAND_SIZE_NONE &&
+      operands & ORC_X86_INSN_OPERAND_OP3_NON_SIMD) {
+    ORC_ERROR ("SIMD register size for non SIMD register");
+    return FALSE;
   }
 
   return TRUE;
 }
-#endif
+
+static orc_bool
+orc_x86_insn_validate_operand4_size (OrcX86InsnOperandSize size, int operands)
+{
+  if (size == ORC_X86_INSN_OPERAND_SIZE_8 &&
+      !(operands & ORC_X86_INSN_OPERAND_OP4_8)) {
+    ORC_ERROR ("Wrong size of %d", size);
+    return FALSE;
+  } else if (size == ORC_X86_INSN_OPERAND_SIZE_NONE &&
+      operands & ORC_X86_INSN_OPERAND_OP4_NON_SIMD) {
+    ORC_ERROR ("SIMD register size for non SIMD register");
+    return FALSE;
+  }
+
+  return TRUE;
+}
 
 /* FIXME don't access the compiler directly */
 OrcX86Insn *
@@ -1745,6 +1770,154 @@ orc_x86_output_insns (OrcCompiler *p)
   }
 }
 
+static orc_bool
+orc_x86_insn_validate_reg2 (int reg)
+{
+  if (reg >= X86_EAX && reg < X86_EAX + 16)
+    return TRUE;
+  else
+    return FALSE;
+}
+
+#define ORC_X86_INSN_VALIDATE_OPERAND_N(n)                                    \
+  if (operands & ORC_X86_INSN_OPERAND_OP##n##_MEM) {                          \
+    orc_bool is_valid = TRUE;                                                 \
+    orc_bool wrong_reg = FALSE;                                               \
+                                                                              \
+    /* For memory we only check if the register is an X86 reg */              \
+    if (!reg)                                                                 \
+      goto missing_reg;                                                       \
+                                                                              \
+    if (!orc_x86_insn_validate_reg2 (reg)) {                                  \
+      is_valid = FALSE;                                                       \
+      wrong_reg = TRUE;                                                       \
+    }                                                                         \
+                                                                              \
+    /* The size should be 4 bytes (32-bits) or 8 bytes (64-bits) */           \
+    if (c->is_64bit && size != ORC_X86_INSN_OPERAND_SIZE_64)                  \
+      is_valid = FALSE;                                                       \
+    if (!c->is_64bit && size != ORC_X86_INSN_OPERAND_SIZE_32)                 \
+      is_valid = FALSE;                                                       \
+                                                                              \
+    if (is_valid)                                                             \
+      return TRUE;                                                            \
+    else if (operands & ORC_X86_INSN_OPERAND_OP##n##_REG)                     \
+      goto check_reg;                                                         \
+    else {                                                                    \
+      if (wrong_reg)                                                          \
+        goto invalid;                                                         \
+      else                                                                    \
+        goto mem_size;                                                        \
+    }                                                                         \
+  }                                                                           \
+                                                                              \
+  if (operands & ORC_X86_INSN_OPERAND_OP##n##_REG) {                          \
+    if (!reg)                                                                 \
+      goto missing_reg;                                                       \
+check_reg:                                                                    \
+    if (operands & ORC_X86_INSN_OPERAND_OP##n##_NON_SIMD) {                   \
+      orc_bool is_valid;                                                      \
+      /* For non SIMD case, check ourselves */                                \
+      /* Check the register type */                                           \
+      is_valid = orc_x86_insn_validate_reg2 (reg);                            \
+      /* Check the size */                                                    \
+      is_valid &= orc_x86_insn_validate_operand##n##_size (size, operands);   \
+      if (is_valid)                                                           \
+        return TRUE;                                                          \
+      else                                                                    \
+        goto invalid;                                                         \
+    } else {                                                                  \
+      if (validate (ORC_X86_INSN_OPERAND_NUM_##n, reg, data)) {               \
+        /* Check the SIMD case in the caller */                               \
+        return TRUE;                                                          \
+      } else {                                                                \
+        /* It is a fail */                                                    \
+        goto invalid;                                                         \
+      }                                                                       \
+    }                                                                         \
+  }                                                                           \
+                                                                              \
+  if (operands & ORC_X86_INSN_OPERAND_OP##n##_IMM) {                          \
+    /* TODO */                                                                \
+    /* Check that there is no reg set */                                      \
+    /* Check that the imm is in the range */                                  \
+    return TRUE;                                                              \
+  }                                                                           \
+                                                                              \
+  if (reg) {                                                                  \
+    ORC_ERROR ("Unsupported operand type");                                   \
+    return FALSE;                                                             \
+  }                                                                           \
+  return TRUE;                                                                \
+                                                                              \
+missing_reg:                                                                  \
+  {                                                                           \
+    ORC_ERROR ("Missing register");                                           \
+    return FALSE;                                                             \
+  }                                                                           \
+invalid:                                                                      \
+  {                                                                           \
+    ORC_ERROR ("Invalid register %d", reg);                                   \
+    return FALSE;                                                             \
+  }                                                                           \
+mem_size:                                                                     \
+  {                                                                           \
+    ORC_ERROR ("Invalid size for memory %d", size);                           \
+    return FALSE;                                                             \
+  }
+
+static orc_bool
+orc_x86_insn_validate_operand1 (OrcCompiler *c, int operands,
+    OrcX86InsnOperandSize size, int reg, orc_int64 imm,
+    OrcX86InsnValidateSIMDOperand validate, void *data)
+{
+  ORC_X86_INSN_VALIDATE_OPERAND_N(1)
+}
+
+static orc_bool
+orc_x86_insn_validate_operand2 (OrcCompiler *c, int operands,
+    OrcX86InsnOperandSize size, int reg, orc_int64 imm,
+    OrcX86InsnValidateSIMDOperand validate, void *data)
+{
+  ORC_X86_INSN_VALIDATE_OPERAND_N(2)
+}
+
+static orc_bool
+orc_x86_insn_validate_operand3 (OrcCompiler *c, int operands,
+    OrcX86InsnOperandSize size, int reg, orc_int64 imm,
+    OrcX86InsnValidateSIMDOperand validate, void *data)
+{
+  ORC_X86_INSN_VALIDATE_OPERAND_N(3)
+}
+
+static orc_bool
+orc_x86_insn_validate_operand4 (OrcCompiler *c, int operands,
+    OrcX86InsnOperandSize size, int reg, orc_int64 imm,
+    OrcX86InsnValidateSIMDOperand validate, void *data)
+{
+  ORC_X86_INSN_VALIDATE_OPERAND_N(4)
+}
+
+orc_bool
+orc_x86_insn_validate_operands (OrcCompiler *c, int operands,
+    OrcX86InsnOperandSize size, int dest, int src0, int src1, int src2,
+    orc_int64 imm, OrcX86InsnValidateSIMDOperand validate, void *data)
+{
+  if (!orc_x86_insn_validate_operand1 (c, operands, size, dest, imm, validate,
+      data))
+    return FALSE;
+  if (!orc_x86_insn_validate_operand2 (c, operands, size, src0, imm, validate,
+      data))
+    return FALSE;
+  if (!orc_x86_insn_validate_operand3 (c, operands, size, src1, imm, validate,
+      data))
+    return FALSE;
+  if (!orc_x86_insn_validate_operand4 (c, operands, size, src2, imm, validate,
+      data))
+    return FALSE;
+  return TRUE;
+} 
+
 orc_bool
 orc_x86_insn_validate_no_operands (int operands)
 {
@@ -1853,6 +2026,100 @@ orc_x86_insn_validate_operand3_imm (orc_int64 imm, int operands)
     return orc_x86_validate_imm_value (imm, orc_x86_insn_operand3_size_from_operands (operands));
   else
     return FALSE;
+}
+
+void
+orc_x86_insn_set_imm (OrcX86Insn *xinsn, unsigned int operands,
+    OrcX86InsnOperandSize size, orc_int64 imm)
+{
+  if (operands & ORC_X86_INSN_OPERAND_OP1_IMM) {
+    orc_x86_insn_operand_set (&xinsn->operands[0],
+        ORC_X86_INSN_OPERAND_TYPE_IMM, size, 0);
+    xinsn->imm = imm;
+  }
+  if (operands & ORC_X86_INSN_OPERAND_OP2_IMM) {
+    orc_x86_insn_operand_set (&xinsn->operands[1],
+        ORC_X86_INSN_OPERAND_TYPE_IMM, size, 0);
+    xinsn->imm = imm;
+  }
+  if (operands & ORC_X86_INSN_OPERAND_OP3_IMM) {
+    orc_x86_insn_operand_set (&xinsn->operands[2],
+        ORC_X86_INSN_OPERAND_TYPE_IMM, size, 0);
+    xinsn->imm = imm;
+  }
+  if (operands & ORC_X86_INSN_OPERAND_OP4_IMM) {
+    orc_x86_insn_operand_set (&xinsn->operands[3],
+        ORC_X86_INSN_OPERAND_TYPE_IMM, size, 0);
+    xinsn->imm = imm;
+  }
+}
+
+void
+orc_x86_insn_set_mem (OrcX86Insn *xinsn, unsigned int operands,
+    OrcX86InsnOperandSize size, OrcX86InsnOperandType type, int dest, int src0,
+    int src1, int src2)
+{
+  /* The register */
+  if (operands & ORC_X86_INSN_OPERAND_OP1_MEM)
+    orc_x86_insn_operand_set (&xinsn->operands[0],
+        type, size, dest);
+  if (operands & ORC_X86_INSN_OPERAND_OP2_MEM)
+    orc_x86_insn_operand_set (&xinsn->operands[1],
+        type, size, src0);
+  if (operands & ORC_X86_INSN_OPERAND_OP3_MEM)
+    orc_x86_insn_operand_set (&xinsn->operands[2],
+        type, size, src1);
+  if (operands & ORC_X86_INSN_OPERAND_OP4_MEM)
+    orc_x86_insn_operand_set (&xinsn->operands[3],
+        type, size, src2);
+  /* Now the mem size */
+  if (operands & ORC_X86_INSN_OPERAND_MEM8)
+    xinsn->mem_size = ORC_X86_INSN_OPERAND_SIZE_8;
+  else if (operands & ORC_X86_INSN_OPERAND_MEM16)
+    xinsn->mem_size = ORC_X86_INSN_OPERAND_SIZE_16;
+  else if (operands & ORC_X86_INSN_OPERAND_MEM32)
+    xinsn->mem_size = ORC_X86_INSN_OPERAND_SIZE_32;
+  else if (operands & ORC_X86_INSN_OPERAND_MEM64)
+    xinsn->mem_size = ORC_X86_INSN_OPERAND_SIZE_64;
+  else
+    xinsn->mem_size = ORC_X86_INSN_OPERAND_SIZE_NONE;
+}
+
+void
+orc_x86_insn_set_operands (OrcX86Insn *xinsn, unsigned int operands,
+    OrcX86InsnOperandSize size, int dest, int src0,
+    int src1, int src2)
+{
+  OrcX86InsnOperandSize opsize;
+
+  if (operands & ORC_X86_INSN_OPERAND_OP1_REG) {
+    opsize = ORC_X86_INSN_OPERAND_SIZE_NONE;
+    if (operands & ORC_X86_INSN_OPERAND_OP1_NON_SIMD)
+      opsize = size;
+    orc_x86_insn_operand_set (&xinsn->operands[0],
+        ORC_X86_INSN_OPERAND_TYPE_REG, opsize, dest);
+  }
+  if (operands & ORC_X86_INSN_OPERAND_OP2_REG) {
+    opsize = ORC_X86_INSN_OPERAND_SIZE_NONE;
+    if (operands & ORC_X86_INSN_OPERAND_OP2_NON_SIMD)
+      opsize = size;
+    orc_x86_insn_operand_set (&xinsn->operands[1],
+        ORC_X86_INSN_OPERAND_TYPE_REG, opsize, src0);
+  }
+  if (operands & ORC_X86_INSN_OPERAND_OP3_REG) {
+    opsize = ORC_X86_INSN_OPERAND_SIZE_NONE;
+    if (operands & ORC_X86_INSN_OPERAND_OP3_NON_SIMD)
+      opsize = size;
+    orc_x86_insn_operand_set (&xinsn->operands[2],
+        ORC_X86_INSN_OPERAND_TYPE_REG, opsize, src1);
+  }
+  if (operands & ORC_X86_INSN_OPERAND_OP4_REG) {
+    opsize = ORC_X86_INSN_OPERAND_SIZE_NONE;
+    if (operands & ORC_X86_INSN_OPERAND_OP4_NON_SIMD)
+      opsize = size;
+    orc_x86_insn_operand_set (&xinsn->operands[3],
+        ORC_X86_INSN_OPERAND_TYPE_REG, opsize, src2);
+  }
 }
 
 void

@@ -505,6 +505,16 @@ typedef enum _OrcX86InsnOperandSize {
   ORC_X86_INSN_OPERAND_SIZE_64   = 8,
 } OrcX86InsnOperandSize;
 
+typedef enum _OrcX86InsnOperandNum {
+  ORC_X86_INSN_OPERAND_NUM_1 = 1,
+  ORC_X86_INSN_OPERAND_NUM_2,
+  ORC_X86_INSN_OPERAND_NUM_3,
+  ORC_X86_INSN_OPERAND_NUM_4,
+} OrcX86InsnOperandNum;
+
+typedef orc_bool (*OrcX86InsnValidateSIMDOperand)(OrcX86InsnOperandNum num,
+    int reg, void *data);
+
 typedef enum _OrcX86InsnEncoding {
   ORC_X86_INSN_ENCODING_NONE, /* For offset only */
   ORC_X86_INSN_ENCODING_ZO,   /* For zero opeands */
