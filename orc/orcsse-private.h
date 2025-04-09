@@ -154,10 +154,6 @@ typedef enum _OrcSSEInsnOperandFlag {
   ORC_X86_INSN_OPERAND_MEM64          \
 ), ORC_SSE_INSN_OPERAND_OP2_XMM
 
-ORC_INTERNAL orc_bool orc_sse_insn_validate_operand1_sse (int reg, unsigned int sse_operands);
-ORC_INTERNAL orc_bool orc_sse_insn_validate_operand2_sse (int reg, unsigned int sse_operands);
-ORC_INTERNAL orc_bool orc_sse_insn_validate_reg (int reg);
-
 ORC_END_DECLS
 
 #endif
