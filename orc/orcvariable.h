@@ -136,7 +136,7 @@ struct _OrcVariable {
   int ptr_offset;
   int mask_alloc;
   int aligned_data;
-  int param_type;
+  OrcParamType param_type;
   int load_dest;
   int update_type;
   int need_offset_reg;
