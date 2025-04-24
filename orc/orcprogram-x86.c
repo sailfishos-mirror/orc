@@ -11,6 +11,7 @@
 #include <orc/orcx86insn.h>
 #include <orc/orcx86-private.h>
 #include <orc/orcinternal.h>
+#include <orc/orcvariable.h>
 
 #if defined(__APPLE__)
 #include  <libkern/OSCacheControl.h>
@@ -428,27 +429,11 @@ orc_x86_get_max_alignment_var (OrcX86Target *t, OrcCompiler *c)
 }
 
 
-static int
-orc_x86_get_shift (OrcX86Target *t, int size)
-{
-  /* Get n for 2^n, taking into account the register size */
-  /* FIXME missing the get_shift code generalization, the SSE 
-   * case can handle until 8, but AVX until 32? */
-  return t->get_shift(size);
-}
-
-static inline orc_bool
-has_valid_alignment (const OrcVariable *var)
-{
-  return (var->alignment % var->size) == 0;
-}
-
 static inline orc_bool
 can_be_validly_aligned (const OrcVariable *var, const OrcX86Target *t)
 {
-  const orc_bool alignment_matches_register =
-      (var->alignment % t->register_size) == 0;
-  return alignment_matches_register && has_valid_alignment (var);
+  return orc_variable_has_valid_alignment (var, t->register_size) && 
+         orc_variable_has_valid_alignment (var, var->size);
 }
 
 static void
@@ -461,7 +446,7 @@ orc_x86_emit_split_3_regions (OrcX86Target *t, OrcCompiler *compiler)
   align_var = orc_x86_get_max_alignment_var (t, compiler);
   if (align_var < 0)
     return;
-  var_size_shift = orc_x86_get_shift (t, compiler->vars[align_var].size);
+  orc_variable_get_shift (&compiler->vars[align_var], &var_size_shift);
   align_shift = var_size_shift + compiler->loop_shift;
 
   /* determine how many iterations until align array is aligned (n1) */
@@ -533,7 +518,7 @@ orc_x86_emit_split_2_regions (OrcX86Target *t, OrcCompiler *compiler)
   align_var = orc_x86_get_max_alignment_var (t, compiler);
   if (align_var < 0)
     return;
-  var_size_shift = orc_x86_get_shift (t, compiler->vars[align_var].size);
+  orc_variable_get_shift (&compiler->vars[align_var], &var_size_shift);
   align_shift = var_size_shift + compiler->loop_shift;
 
   /* Calculate n2 */
@@ -1129,7 +1114,7 @@ orc_x86_compile (OrcCompiler *compiler)
 
       compiler->loop_shift = save_loop_shift;
       /* Consider as aligned only if the alignment allows so */
-      compiler->vars[align_var].is_aligned = has_valid_alignment (&compiler->vars[align_var]);
+      compiler->vars[align_var].is_aligned = orc_variable_has_valid_alignment (&compiler->vars[align_var], compiler->vars[align_var].size);
     }
 
     orc_x86_emit_label (compiler, LABEL_REGION1_SKIP);

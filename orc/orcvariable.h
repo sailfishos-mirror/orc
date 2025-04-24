@@ -149,6 +149,9 @@ struct _OrcVariable {
 #ifdef ORC_ENABLE_UNSTABLE_API
 
 ORC_API const char * orc_variable_id_get_name (OrcVariableId id);
+ORC_API orc_bool orc_variable_has_natural_alignment (const OrcVariable *v);
+ORC_API orc_bool orc_variable_has_valid_alignment (const OrcVariable *v, int alignment);
+ORC_API orc_bool orc_variable_get_shift (const OrcVariable *v, int *shift);
 
 #endif
 

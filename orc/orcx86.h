@@ -34,7 +34,6 @@ typedef struct _OrcX86Target
   void (*load_constant_long)(OrcCompiler *c, int reg, OrcConstant *constant);
   void (*move_register_to_memoffset)(OrcCompiler *compiler, int size, int reg1, int offset, int reg2, int aligned, int uncached);
   void (*move_memoffset_to_register)(OrcCompiler *compiler, int size, int offset, int reg1, int reg2, int is_aligned);
-  int (*get_shift)(int size);
   /* These are specific to the implementation. We need to keep private data
    * and proceed accordingly with a generic prologue, epilogue instead of
    * a function pointer for each case

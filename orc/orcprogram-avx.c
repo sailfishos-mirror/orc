@@ -461,28 +461,6 @@ avx_zeroupper (OrcCompiler *compiler)
   orc_vex_emit_cpuinsn_none (compiler, ORC_AVX_vzeroupper);
 }
 
-static int
-avx_get_shift (int size)
-{
-  switch (size) {
-    case 1:
-      return 0;
-    case 2:
-      return 1;
-    case 4:
-      return 2;
-    case 8:
-      return 3;
-    case 16: // AVX2 shifts
-      return 4;
-    case 32:
-      return 5;
-    default:
-      ORC_ERROR ("bad size %d", size);
-  }
-  return -1;
-}
-
 static void
 avx_set_mxcsr (OrcCompiler *c)
 {
@@ -516,7 +494,6 @@ orc_avx_init (void)
     orc_avx_load_constant_long,
     avx_move_register_to_memoffset,
     avx_move_memoffset_to_register,
-    avx_get_shift,
     avx_set_mxcsr,
     avx_restore_mxcsr,
     NULL,

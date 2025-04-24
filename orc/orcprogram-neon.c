@@ -342,24 +342,6 @@ orc_neon_emit_store_dest (OrcCompiler *compiler, OrcVariable *var)
 #endif
 
 int
-orc_neon_get_shift (int size)
-{
-  switch (size) {
-    case 1:
-      return 0;
-    case 2:
-      return 1;
-    case 4:
-      return 2;
-    case 8:
-      return 3;
-    default:
-      ORC_ERROR("bad size %d", size);
-  }
-  return -1;
-}
-
-int
 orc_neon_get_align_var (OrcCompiler *compiler)
 {
   if (compiler->vars[ORC_VAR_D1].size) return ORC_VAR_D1;
