@@ -164,13 +164,6 @@ ORC_API const char * orc_arm_cond_name (OrcArmCond cond);
 
 ORC_API void orc_arm_flush_cache (OrcCode *code);
 
-ORC_API void orc_arm_loadb (OrcCompiler *compiler, int dest, int src1, int offset);
-ORC_API void orc_arm_storeb (OrcCompiler *compiler, int dest, int offset, int src1);
-ORC_API void orc_arm_loadw (OrcCompiler *compiler, int dest, int src1, int offset);
-ORC_API void orc_arm_storew (OrcCompiler *compiler, int dest, int offset, int src1);
-ORC_API void orc_arm_loadl (OrcCompiler *compiler, int dest, int src1, int offset);
-ORC_API void orc_arm_storel (OrcCompiler *compiler, int dest, int offset, int src1);
-
 ORC_API void orc_arm_add_fixup (OrcCompiler *compiler, int label, int type);
 ORC_API void orc_arm_do_fixups (OrcCompiler *compiler);
 

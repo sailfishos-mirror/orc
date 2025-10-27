@@ -12,6 +12,13 @@ ORC_API void orc_arm_emit (OrcCompiler *compiler, orc_uint32 insn);
 ORC_API void orc_arm_emit_bx_lr (OrcCompiler *compiler);
 ORC_API void orc_arm_emit_load_imm (OrcCompiler *compiler, int dest, int imm);
 
+ORC_API void orc_arm_emit_ldrb (OrcCompiler *compiler, int dest, int src1, int offset);
+ORC_API void orc_arm_emit_strb (OrcCompiler *compiler, int dest, int offset, int src1);
+ORC_API void orc_arm_emit_ldrh (OrcCompiler *compiler, int dest, int src1, int offset);
+ORC_API void orc_arm_emit_strh (OrcCompiler *compiler, int dest, int offset, int src1);
+ORC_API void orc_arm_emit_ldr (OrcCompiler *compiler, int dest, int src1, int offset);
+ORC_API void orc_arm_emit_str (OrcCompiler *compiler, int dest, int offset, int src1);
+
 ORC_API void orc_arm_emit_add (OrcCompiler *compiler, int dest, int src1, int src2);
 ORC_API void orc_arm_emit_sub (OrcCompiler *compiler, int dest, int src1, int src2);
 ORC_API void orc_arm_emit_add_imm (OrcCompiler *compiler, int dest, int src1, int value);
