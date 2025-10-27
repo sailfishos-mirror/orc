@@ -117,7 +117,7 @@ arm_rule_storeX (OrcCompiler *compiler, void *user, OrcInstruction *insn)
 }
 
 void
-orc_arm_emit_mov_iw (OrcCompiler *p, int cond, int dest, int val, int loop)
+orc_arm_mov_iw (OrcCompiler *p, int cond, int dest, int val, int loop)
 {
   /* dest = val */
   orc_arm_emit_mov_i (p, cond, 0, dest, val);
@@ -127,7 +127,7 @@ orc_arm_emit_mov_iw (OrcCompiler *p, int cond, int dest, int val, int loop)
 }
 
 void
-orc_arm_emit_mov_ib (OrcCompiler *p, int cond, int dest, int val, int loop)
+orc_arm_mov_ib (OrcCompiler *p, int cond, int dest, int val, int loop)
 {
   /* 1 byte */
   orc_arm_emit_mov_i (p, cond, 0, dest, val);
@@ -517,10 +517,10 @@ arm_rule_shlX (OrcCompiler *p, void *user, OrcInstruction *insn)
           orc_arm_emit_mov_rsi (p, ORC_ARM_COND_AL, 1, dest, src1, ORC_ARM_LSL, val);
           if (size == 1)
             /* make loop * 0x80 */
-            orc_arm_emit_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
+            orc_arm_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
           else
             /* make loop * 0x8000 */
-            orc_arm_emit_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
+            orc_arm_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
           /* make mask, this mask has enough bits but is shifted one position to the right */
           orc_arm_emit_sub_rsi (p, ORC_ARM_COND_NE, 0, mask, mask, mask, ORC_ARM_LSR, val);
           /* clear upper bits */
@@ -538,10 +538,10 @@ arm_rule_shlX (OrcCompiler *p, void *user, OrcInstruction *insn)
       orc_arm_emit_mov_rsr (p, ORC_ARM_COND_AL, 1, dest, src1, ORC_ARM_LSL, src2);
       if (size == 1)
         /* make loop * 0x80 */
-        orc_arm_emit_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
+        orc_arm_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
       else
         /* make loop * 0x8000 */
-        orc_arm_emit_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
+        orc_arm_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
       /* make mask */
       orc_arm_emit_sub_rsr (p, ORC_ARM_COND_NE, 0, mask, mask, mask, ORC_ARM_LSR, src2);
       /* clear bits */
@@ -582,10 +582,10 @@ arm_rule_shrsX (OrcCompiler *p, void *user, OrcInstruction *insn)
         } else {
           if (size == 1)
             /* make loop * 80, position of sign bit after shift */
-            orc_arm_emit_mov_ib (p, ORC_ARM_COND_AL, mask, 0x80, loop);
+            orc_arm_mov_ib (p, ORC_ARM_COND_AL, mask, 0x80, loop);
           else
             /* make loop * 8000 */
-            orc_arm_emit_mov_iw (p, ORC_ARM_COND_AL, mask, 0x8000, loop);
+            orc_arm_mov_iw (p, ORC_ARM_COND_AL, mask, 0x8000, loop);
           /* make mask, save in tmp, we need the original mask */
           orc_arm_emit_sub_rsi (p, ORC_ARM_COND_AL, 0, tmp, mask, mask, ORC_ARM_LSR, val);
 
@@ -613,10 +613,10 @@ arm_rule_shrsX (OrcCompiler *p, void *user, OrcInstruction *insn)
     if (size < 4) {
       if (size == 1)
         /* make loop * 0x80 */
-        orc_arm_emit_mov_ib (p, ORC_ARM_COND_AL, mask, 0x80, loop);
+        orc_arm_mov_ib (p, ORC_ARM_COND_AL, mask, 0x80, loop);
       else
         /* make loop * 0x8000 */
-        orc_arm_emit_mov_iw (p, ORC_ARM_COND_AL, mask, 0x8000, loop);
+        orc_arm_mov_iw (p, ORC_ARM_COND_AL, mask, 0x8000, loop);
       /* make mask */
       orc_arm_emit_sub_rsr (p, ORC_ARM_COND_AL, 0, tmp, mask, mask, ORC_ARM_LSR, src2);
 
@@ -670,10 +670,10 @@ arm_rule_shruX (OrcCompiler *p, void *user, OrcInstruction *insn)
 
           if (size == 1)
             /* make loop * 0x80 */
-            orc_arm_emit_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
+            orc_arm_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
           else
             /* make loop * 0x8000 */
-            orc_arm_emit_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
+            orc_arm_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
           /* make mask */
           orc_arm_emit_sub_rsi (p, ORC_ARM_COND_NE, 0, mask, mask, mask, ORC_ARM_LSR, val);
 
@@ -694,10 +694,10 @@ arm_rule_shruX (OrcCompiler *p, void *user, OrcInstruction *insn)
 
       if (size == 1)
         /* make loop * 0x80 */
-        orc_arm_emit_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
+        orc_arm_mov_ib (p, ORC_ARM_COND_NE, mask, 0x80, loop);
       else
         /* make loop * 0x8000 */
-        orc_arm_emit_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
+        orc_arm_mov_iw (p, ORC_ARM_COND_NE, mask, 0x8000, loop);
       /* make mask */
       orc_arm_emit_sub_rsr (p, ORC_ARM_COND_NE, 0, mask, mask, mask, ORC_ARM_LSR, src2);
 
