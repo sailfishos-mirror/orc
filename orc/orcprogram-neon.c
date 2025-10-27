@@ -14,6 +14,8 @@
 #include <orc/orcinternal.h>
 
 #include <orc/orcneon.h>
+#include <orc/orcarminsn.h>
+#include <orc/orcarm64insn.h>
 
 #define SIZE 65536
 #define MAX_UNROLL 16

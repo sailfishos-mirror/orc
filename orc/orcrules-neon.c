@@ -10,6 +10,8 @@
 #include <orc/orcprogram.h>
 #include <orc/orcinternal.h>
 #include <orc/orcarm.h>
+#include <orc/orcarminsn.h>
+#include <orc/orcarm64insn.h>
 #include <orc/orcdebug.h>
 
 #include <orc/orcneon.h>
