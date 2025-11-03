@@ -74,28 +74,6 @@ orc_neon_emit_prologue (OrcCompiler *compiler)
   orc_arm_emit_push (compiler, regs, vregs);
 }
 
-/* unused */
-#if 0
-static void
-orc_neon_dump_insns (OrcCompiler *compiler)
-{
-
-  orc_arm_emit_label (compiler, 0);
-
-  orc_arm_emit_add (compiler, ORC_ARM_A2, ORC_ARM_A3, ORC_ARM_A4);
-  orc_arm_emit_sub (compiler, ORC_ARM_A2, ORC_ARM_A3, ORC_ARM_A4);
-  orc_arm_emit_push (compiler, 0x06, 0U);
-  orc_arm_emit_mov (compiler, ORC_ARM_A2, ORC_ARM_A3);
-
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_LE, 0);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_AL, 0);
-
-  orc_arm_emit_load_imm (compiler, ORC_ARM_A3, 0xa500);
-  orc_arm_emit_ldrh (compiler, ORC_ARM_A3, ORC_ARM_A4, 0xa5);
-  orc_arm_emit_load_reg (compiler, ORC_ARM_A3, ORC_ARM_A4, 0x5a5);
-}
-#endif
-
 static void
 orc_neon_emit_epilogue (OrcCompiler *compiler)
 {
@@ -122,8 +100,6 @@ orc_neon_emit_epilogue (OrcCompiler *compiler)
 
   orc_arm_emit_pop (compiler, regs, vregs);
   orc_arm_emit_bx_lr (compiler);
-
-  /* arm_dump_insns (compiler); */
 }
 
 static OrcTarget neon_target = {
