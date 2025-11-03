@@ -8,6 +8,7 @@
 #include <orc/orcarminsn.h>
 #include <orc/orcarm64insn.h>
 #include <orc/orcinternal.h>
+#include <orc/orcutils-private.h>
 
 void
 orc_arm_emit (OrcCompiler *compiler, orc_uint32 insn)
@@ -27,18 +28,6 @@ orc_arm_emit_bx_lr (OrcCompiler *compiler)
   }
 }
 
-static int
-count_reg_ones (int regs)
-{
-  int count = 0;
-
-  while (regs) {
-    count += regs & 1;
-    regs >>= 1;
-  }
-
-  return count;
-}
 
 void
 orc_arm_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs)
@@ -52,7 +41,7 @@ orc_arm_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs)
       int count, stores;
       int stack_increased = 0;
       /** a number of 1s in regs */
-      count = count_reg_ones (regs);
+      count = orc_count_ones (regs);
       /** AArch64 requires a 16-byte aligned stack pointer */
       stores = (count-1)/2+1;
       x = -1;
@@ -156,7 +145,7 @@ orc_arm_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs)
     if (compiler->is_64bit) {
       int count, loads, tmp_loads;
       /** a number of 1s in regs */
-      count = count_reg_ones (regs);
+      count = orc_count_ones (regs);
       /** AArch64 requires a 16-byte aligned stack pointer */
       loads = (count-1)/2+1;
       tmp_loads = loads;

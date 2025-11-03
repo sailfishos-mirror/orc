@@ -13,6 +13,7 @@
 #include <orc/orcarminsn.h>
 #include <orc/orcarm64insn.h>
 #include <orc/orcdebug.h>
+#include <orc/orcutils-private.h>
 
 #include <orc/orcneon.h>
 
@@ -116,19 +117,17 @@ const char *orc_neon64_reg_name_scalar (int reg, int size)
       "q28", "q29", "q30", "q31"
     }
   };
-  int size_idx;
+
+  if (size == 0) {
+    return "ERROR";
+  }
 
   if (reg < ORC_VEC_REG_BASE || reg >= ORC_VEC_REG_BASE+32) {
     return "ERROR";
   }
 
-  size_idx = -1;
-  while (size) {
-    size_idx++;
-    size >>= 1;
-  }
-
-  if (size_idx < 0 || size_idx >= 5) {
+  unsigned int size_idx = orc_count_ones (size);
+  if (size_idx >= 5) {
     return "ERROR";
   }
 
@@ -220,19 +219,17 @@ const char *orc_neon64_reg_name_vector (int reg, int size, int quad)
       "v28.2d", "v29.2d", "v30.2d", "v31.2d"
     }
   };
-  int size_idx;
+
+  if (size == 0) {
+    return "ERROR";
+  }
 
   if (reg < ORC_VEC_REG_BASE || reg >= ORC_VEC_REG_BASE+32) {
     return "ERROR";
   }
 
-  size_idx = -1;
-  while (size) {
-    size_idx++;
-    size >>= 1;
-  }
-
-  if (size_idx < 0 || size_idx >= 4) {
+  unsigned int size_idx = orc_count_ones (size);
+  if (size_idx >= 4) {
     return "ERROR";
   }
 
@@ -289,19 +286,17 @@ const char *orc_neon64_reg_name_vector_single (int reg, int size)
     },
   };
 
-  int size_idx;
+
+  if (size == 0) {
+    return "ERROR";
+  }
 
   if (reg < ORC_VEC_REG_BASE || reg >= ORC_VEC_REG_BASE+32) {
     return "ERROR";
   }
 
-  size_idx = -1;
-  while (size) {
-    size_idx++;
-    size >>= 1;
-  }
-
-  if (size_idx < 0 || size_idx >= 4) {
+  unsigned int size_idx = orc_count_ones (size);
+  if (size_idx >= 4) {
     return "ERROR";
   }
 
