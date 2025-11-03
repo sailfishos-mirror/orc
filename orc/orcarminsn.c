@@ -102,7 +102,7 @@ orc_arm_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs)
     }
   }
 
-  if (vregs) {
+  if (!compiler->is_64bit && vregs) {
     int first = -1, last = -1, nregs;
 
     ORC_ASM_CODE(compiler, "  vpush {");
@@ -121,6 +121,7 @@ orc_arm_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs)
     nregs = last + 1 - first + 1;
     orc_arm_emit (compiler, 0xed2d0b00 | (((first & 0x10) >> 4) << 22) | ((first & 0x0f) << 12) | (nregs << 1));
   }
+  // FIXME: Push vregs for AArch64 too
 }
 
 void
@@ -129,7 +130,7 @@ orc_arm_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs)
   int i;
 
 
-  if (vregs) {
+  if (!compiler->is_64bit && vregs) {
     int first = -1, last = -1, nregs;
 
     ORC_ASM_CODE(compiler, "  vpop {");
@@ -147,6 +148,7 @@ orc_arm_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs)
     nregs = last + 1 - first + 1;
     orc_arm_emit (compiler, 0xecbd0b00 | (((first & 0x10) >> 4) << 22) | ((first & 0x0f) << 12) | (nregs << 1));
   }
+  // FIXME: Pop vregs for AArch64 too
 
   if (regs) {
     int x = 0;
