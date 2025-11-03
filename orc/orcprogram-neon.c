@@ -103,10 +103,11 @@ orc_neon_emit_epilogue (OrcCompiler *compiler)
 
   if (compiler->is_64bit) {
     orc_arm64_emit_pop (compiler, regs, vregs);
+    orc_arm64_emit_ret (compiler, ORC_ARM64_LR);
   } else {
     orc_arm_emit_pop (compiler, regs, vregs);
+    orc_arm_emit_bx_lr (compiler);
   }
-  orc_arm_emit_bx_lr (compiler);
 }
 
 static OrcTarget neon_target = {

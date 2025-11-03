@@ -20,12 +20,8 @@ orc_arm_emit (OrcCompiler *compiler, orc_uint32 insn)
 void
 orc_arm_emit_bx_lr (OrcCompiler *compiler)
 {
-  if (compiler->is_64bit) {
-    orc_arm64_emit_ret (compiler, ORC_ARM64_LR);
-  } else {
-    ORC_ASM_CODE(compiler,"  bx lr\n");
-    orc_arm_emit (compiler, 0xe12fff1e);
-  }
+  ORC_ASM_CODE(compiler,"  bx lr\n");
+  orc_arm_emit (compiler, 0xe12fff1e);
 }
 
 

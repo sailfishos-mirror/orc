@@ -61,10 +61,11 @@ orc_arm_emit_epilogue (OrcCompiler *compiler)
 
   if (compiler->is_64bit) {
     orc_arm64_emit_pop (compiler, regs, 0U);
+    orc_arm64_emit_ret (compiler, ORC_ARM64_LR);
   } else {
     orc_arm_emit_pop (compiler, regs, 0U);
+    orc_arm_emit_bx_lr (compiler);
   }
-  orc_arm_emit_bx_lr (compiler);
 }
 
 static OrcTarget orc_arm_target = {
