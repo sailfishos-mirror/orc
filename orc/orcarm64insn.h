@@ -30,6 +30,7 @@ ORC_API void orc_arm64_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vr
 ORC_API void orc_arm64_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs);
 ORC_API void orc_arm64_emit_align (OrcCompiler *compiler, int align_shift);
 ORC_API void orc_arm64_emit_nop (OrcCompiler *compiler);
+ORC_API void orc_arm64_emit_branch (OrcCompiler *compiler, int cond, int label);
 ORC_API void orc_arm64_emit_data (OrcCompiler *compiler, orc_uint32 data);
 /** @todo add arm64-specific helper functions if needed */
 

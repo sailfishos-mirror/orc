@@ -620,7 +620,7 @@ orc_neon64_set_region_counters (OrcCompiler *compiler)
       (int)ORC_STRUCT_OFFSET(OrcExecutor,n));
   /** N <= IP0, go to LABEL_ONE_REGION */
   orc_arm64_emit_cmp (compiler, 32, ORC_ARM64_R2, ORC_ARM64_IP0);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_LE, LABEL_ONE_REGION);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_LE, LABEL_ONE_REGION);
 
   /** counter1 = IP0 */
   orc_arm64_emit_store_reg (compiler, 32, ORC_ARM64_IP0, compiler->exec_reg,
@@ -643,7 +643,7 @@ orc_neon64_set_region_counters (OrcCompiler *compiler)
       (int)ORC_STRUCT_OFFSET(OrcExecutor,counter3));
 
   /** go to LABEL_ONE_REGION_AFTER */
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_ONE_REGION_AFTER);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_ONE_REGION_AFTER);
   orc_arm_emit_label (compiler, LABEL_ONE_REGION);
 
   /** counter1 = r2 */
@@ -668,7 +668,7 @@ orc_neon64_short_unaligned_loop (OrcCompiler *compiler)
 
   /** if N > ORC_NEON_ALIGNED_DEST_CUTOFF, go to LABEL_REGION0_SKIP */
   orc_arm64_emit_cmp_imm (compiler, 32, ORC_ARM64_R2, ORC_NEON_ALIGNED_DEST_CUTOFF);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_GT, LABEL_REGION0_SKIP);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_GT, LABEL_REGION0_SKIP);
 
   /** counter2 = N >> loop shift */
   orc_arm64_emit_asr_imm (compiler, 32, ORC_ARM64_R1, ORC_ARM64_R2,
@@ -689,7 +689,7 @@ orc_neon64_short_unaligned_loop (OrcCompiler *compiler)
   orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_IP0, compiler->exec_reg,
       (int)ORC_STRUCT_OFFSET(OrcExecutor,counter2));
   orc_arm64_emit_cmp_imm (compiler, 32, ORC_ARM64_IP0, 0);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_SKIP);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_SKIP);
 
   /** vector calculation loop */
   compiler->size_region = 0;
@@ -700,9 +700,9 @@ orc_neon64_short_unaligned_loop (OrcCompiler *compiler)
   orc_neon_emit_loop (compiler, -1);
 
   /** if counter2 != zero, repeat loop */
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION0_LOOP);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION0_LOOP);
   /** else go to LABEL_REGION2_SKIP */
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
   orc_arm_emit_label (compiler, LABEL_REGION0_SKIP);
 }
 
@@ -719,7 +719,7 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
 
   /** if IP0 == 0, go to LABEL_REGION2_SKIP */
   orc_arm64_emit_cmp_imm (compiler, 32, ORC_ARM64_IP0, 0);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_SKIP);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_SKIP);
 
   /** r1 = IP0 >> (17 + var_size_shift - compiler->loop_shift - compiler->unroll_shift) */
   orc_arm64_emit_asr_imm (compiler, 32, compiler->gp_tmpreg, ORC_ARM64_IP0,
@@ -727,7 +727,7 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
 
   /** if r1 == 0, go to LABEL_REGION2_MEDIUM */
   orc_arm64_emit_cmp_imm (compiler, 32, compiler->gp_tmpreg, 0);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_MEDIUM);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_MEDIUM);
 
   /** N is larger than L2 cache size */
   compiler->size_region = 3;
@@ -736,15 +736,15 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   for(i=0;i<(1<<compiler->unroll_shift);i++){
     orc_neon_emit_loop (compiler, i);
   }
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_LARGE);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_LARGE);
   /** DONE, let's finish */
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
 
   orc_arm_emit_label (compiler, LABEL_REGION2_MEDIUM);
   orc_arm64_emit_asr_imm (compiler, 32, compiler->gp_tmpreg, ORC_ARM64_IP0,
       13 + var_size_shift - compiler->loop_shift - compiler->unroll_shift);
   orc_arm64_emit_cmp_imm (compiler, 32, compiler->gp_tmpreg, 0);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_SMALL);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION2_SMALL);
 
   /* N is smaller than L2 cache size */
   compiler->size_region = 2;
@@ -753,8 +753,8 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   for(i=0;i<(1<<compiler->unroll_shift);i++){
     orc_neon_emit_loop (compiler, i);
   }
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_MEDIUM);
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_MEDIUM);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
 
   orc_arm_emit_label (compiler, LABEL_REGION2_SMALL);
   /* N is smaller than L1 cache size */
@@ -764,7 +764,7 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   for(i=0;i<(1<<compiler->unroll_shift);i++){
     orc_neon_emit_loop (compiler, i);
   }
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_SMALL);
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_SMALL);
 
   orc_arm_emit_label (compiler, LABEL_REGION2_SKIP);
 }
@@ -776,11 +776,11 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_IP0, compiler->exec_reg, \
       (int)ORC_STRUCT_OFFSET(OrcExecutor,counter)); \
   orc_arm64_emit_cmp_imm (compiler, 32, ORC_ARM64_IP0, 0); \
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_EQ, label_skip); \
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_EQ, label_skip); \
   orc_arm_emit_label (compiler, label_loop); \
   orc_arm64_emit_subs_imm (compiler, 32, ORC_ARM64_IP0, ORC_ARM64_IP0, 1); \
   orc_neon_emit_loop (compiler, -1); \
-  orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, label_loop); \
+  orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, label_loop); \
   orc_arm_emit_label (compiler, label_skip); \
   compiler->loop_shift = save_loop_shift; \
 }
@@ -1238,7 +1238,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
       orc_neon_emit_loop (compiler, -1);
       compiler->loop_shift = save_loop_shift;
 
-      orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION3_LOOP);
+      orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION3_LOOP);
     }
   } else if (compiler->loop_shift > 0) {
     if (compiler->n_insns < ORC_NEON_LONG_PROGRAM_CUTOFF)
@@ -1277,7 +1277,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
     orc_arm64_emit_subs_imm (compiler, 32, ORC_ARM64_IP1, ORC_ARM64_IP1, 1);
     orc_arm64_emit_store_reg (compiler, 32, ORC_ARM64_IP1, compiler->exec_reg,
         (int)ORC_STRUCT_OFFSET(OrcExecutor,params[ORC_VAR_A2]));
-    orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_OUTER_LOOP);
+    orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_OUTER_LOOP);
   }
 
   orc_neon_save_accumulators (compiler);

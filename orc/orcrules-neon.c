@@ -2060,7 +2060,7 @@ orc_neon_emit_loadiq (OrcCompiler *compiler, OrcVariable *dest, long long value)
         orc_neon64_reg_name_vector (reg, 8, 0));
     orc_arm_emit (compiler, 0x5c000040 | (reg & 0x1f));
 
-    orc_arm_emit_branch (compiler, ORC_ARM_COND_AL, 30);
+    orc_arm64_emit_branch (compiler, ORC_ARM_COND_AL, 30);
     orc_arm_emit (compiler, value & 0xffffffffULL);
     orc_arm_emit (compiler, value >> 32ULL);
     orc_arm_emit_label (compiler, 30);

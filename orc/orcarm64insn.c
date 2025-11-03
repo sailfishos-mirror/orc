@@ -1104,6 +1104,42 @@ orc_arm64_emit_nop (OrcCompiler *compiler)
 }
 
 void
+orc_arm64_emit_branch (OrcCompiler *compiler, int cond, int label)
+{
+  orc_uint32 code;
+
+  /** B.cond
+   *    3                   2                   1
+   *  1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
+   * +---------------------------------------------------------------+
+   * |0 1 0 1 0 1 0|0|                imm19                |0| cond  |
+   * +---------------------------------------------------------------+
+   *
+   *  B
+   *    3                   2                   1
+   *  1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
+   * +---------------------------------------------------------------+
+   * |0 0 0 1 0 1|                       imm26                       |
+   * +---------------------------------------------------------------+
+   *
+   * Note that we don't know exact imm19/imm26 yet, so need fixup codes.
+   */
+  if (cond < ORC_ARM_COND_AL) {
+    code = 0x54000000;
+    code |=  cond&0xf;
+
+    ORC_ASM_CODE(compiler,"  b.%s .L%d\n", orc_arm_cond_name(cond), label);
+  } else {
+    code = 0x14000000;
+
+    ORC_ASM_CODE(compiler,"  b .L%d\n", label);
+  }
+
+  orc_arm_add_fixup (compiler, label, 0);
+  orc_arm_emit (compiler, code);
+}
+
+void
 orc_arm64_emit_data (OrcCompiler *compiler, orc_uint32 data)
 {
   if (compiler->target_flags & ORC_TARGET_CLEAN_COMPILE) {
