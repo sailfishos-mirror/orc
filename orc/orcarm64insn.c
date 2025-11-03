@@ -1083,3 +1083,33 @@ orc_arm64_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs)
         ORC_GP_REG_BASE+x, ORC_ARM64_SP, loads * 16);
   }
 }
+
+void
+orc_arm64_emit_align (OrcCompiler *compiler, int align_shift)
+{
+  int diff;
+
+  diff = (compiler->code - compiler->codeptr)&((1<<align_shift) - 1);
+  while (diff) {
+    orc_arm64_emit_nop (compiler);
+    diff-=4;
+  }
+}
+
+void
+orc_arm64_emit_nop (OrcCompiler *compiler)
+{
+  ORC_ASM_CODE(compiler,"  nop\n");
+  orc_arm_emit (compiler, 0xd503201f);
+}
+
+void
+orc_arm64_emit_data (OrcCompiler *compiler, orc_uint32 data)
+{
+  if (compiler->target_flags & ORC_TARGET_CLEAN_COMPILE) {
+    orc_arm64_emit_nop (compiler);
+  } else {
+    ORC_ASM_CODE(compiler,"  .word 0x%08x\n", data);
+    orc_arm_emit (compiler, data);
+  }
+}

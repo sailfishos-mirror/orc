@@ -1284,7 +1284,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
 
   orc_neon_emit_epilogue (compiler);
 
-  orc_arm_emit_align (compiler, 4);
+  orc_arm64_emit_align (compiler, 4);
 
   orc_arm_do_fixups (compiler);
 }
