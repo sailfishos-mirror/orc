@@ -71,7 +71,10 @@ orc_neon_emit_prologue (OrcCompiler *compiler)
      }
   }
 
-  orc_arm_emit_push (compiler, regs, vregs);
+  if (compiler->is_64bit)
+    orc_arm64_emit_push (compiler, regs, vregs);
+  else
+    orc_arm_emit_push (compiler, regs, vregs);
 }
 
 static void
@@ -98,7 +101,11 @@ orc_neon_emit_epilogue (OrcCompiler *compiler)
      }
   }
 
-  orc_arm_emit_pop (compiler, regs, vregs);
+  if (compiler->is_64bit) {
+    orc_arm64_emit_pop (compiler, regs, vregs);
+  } else {
+    orc_arm_emit_pop (compiler, regs, vregs);
+  }
   orc_arm_emit_bx_lr (compiler);
 }
 

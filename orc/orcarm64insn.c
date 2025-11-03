@@ -8,6 +8,7 @@
 #include <orc/orcarminsn.h>
 #include <orc/orcarm64insn.h>
 #include <orc/orcinternal.h>
+#include <orc/orcutils-private.h>
 
 
 #define ARM64_MAX_OP_LEN 64
@@ -993,4 +994,92 @@ orc_arm64_emit_ret (OrcCompiler *p, int Rn)
       Rn == ORC_ARM64_LR ? "" : orc_arm64_reg_name (Rn, ORC_ARM64_REG_64));
 
   orc_arm_emit (p, code);
+}
+
+void
+orc_arm64_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs)
+{
+  if (!regs)
+    return;
+
+  int i;
+  int x = 0;
+  int count, stores;
+  int stack_increased = 0;
+  /** a number of 1s in regs */
+  count = orc_count_ones (regs);
+  /** AArch64 requires a 16-byte aligned stack pointer */
+  stores = (count-1)/2+1;
+  x = -1;
+  for(i=0;i<32;i++){
+    if (stores == 0) break;
+    if (regs & (1<<i)) {
+      if (stack_increased == 0) {
+        /** increase stack area & store registers */
+        if (count % 2 == 1) {
+          orc_arm64_emit_store_pre (compiler, 64, ORC_GP_REG_BASE+i,
+              ORC_ARM64_SP, (stores--) * -16);
+          stack_increased = 1;
+          continue;
+        } else if (x != -1) {
+          orc_arm64_emit_store_pair_pre (compiler, 64, ORC_GP_REG_BASE+x,
+              ORC_GP_REG_BASE+i, ORC_ARM64_SP, (stores--) * -16);
+          stack_increased = 1;
+          x = -1;
+          continue;
+        }
+      }
+
+      if (x != -1) {
+        /** store registers */
+        orc_arm64_emit_store_pair_reg (compiler, 64, ORC_GP_REG_BASE+x,
+            ORC_GP_REG_BASE+i, ORC_ARM64_SP, (stores--) * 16);
+        x = -1;
+      } else {
+        x = i;
+      }
+    }
+  }
+
+  // FIXME: Push vregs for AArch64 too
+}
+
+void
+orc_arm64_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs)
+{
+  if (!regs)
+    return;
+
+  // FIXME: Pop vregs for AArch64 too
+
+  int i;
+  int x = 0;
+  int count, loads, tmp_loads;
+  /** a number of 1s in regs */
+  count = orc_count_ones (regs);
+  /** AArch64 requires a 16-byte aligned stack pointer */
+  loads = (count-1)/2+1;
+  tmp_loads = loads;
+  x = -1;
+  for(i=31;i>=0;i--){
+    if (regs & (1<<i)) {
+      if (x != -1) {
+        if (tmp_loads == 1) break;
+        /** load registers */
+        orc_arm64_emit_load_pair_reg (compiler, 64, ORC_GP_REG_BASE+i,
+            ORC_GP_REG_BASE+x, ORC_ARM64_SP, (loads - (--tmp_loads)) * 16);
+        x = -1;
+      } else {
+        x = i;
+      }
+    }
+  }
+  /** decrease stack area & load registers */
+  if (count % 2 == 1) {
+    orc_arm64_emit_load_post (compiler, 64, ORC_GP_REG_BASE+x,
+        ORC_ARM64_SP, loads * 16);
+  } else {
+    orc_arm64_emit_load_pair_post (compiler, 64, ORC_GP_REG_BASE+i,
+        ORC_GP_REG_BASE+x, ORC_ARM64_SP, loads * 16);
+  }
 }

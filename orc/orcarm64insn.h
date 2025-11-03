@@ -26,6 +26,8 @@ ORC_API void orc_arm64_emit_mem (OrcCompiler *p, OrcArm64RegBits bits, OrcArm64M
 ORC_API void orc_arm64_emit_mem_pair (OrcCompiler *p, OrcArm64RegBits bits, OrcArm64Mem opcode,
     int opt, int Rt, int Rt2, int Rn, orc_int32 imm);
 ORC_API void orc_arm64_emit_ret (OrcCompiler *p, int Rn);
+ORC_API void orc_arm64_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs);
+ORC_API void orc_arm64_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs);
 /** @todo add arm64-specific helper functions if needed */
 
 /** Data Procesing (DP) instructions */

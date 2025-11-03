@@ -39,7 +39,10 @@ orc_arm_emit_prologue (OrcCompiler *compiler)
       regs |= (1<<i);
     }
   }
-  if (regs) orc_arm_emit_push (compiler, regs, 0U);
+  if (compiler->is_64bit)
+    orc_arm64_emit_push (compiler, regs, 0U);
+  else
+    orc_arm_emit_push (compiler, regs, 0U);
 
 }
 
@@ -55,7 +58,12 @@ orc_arm_emit_epilogue (OrcCompiler *compiler)
       regs |= (1<<i);
     }
   }
-  if (regs) orc_arm_emit_pop (compiler, regs, 0U);
+
+  if (compiler->is_64bit) {
+    orc_arm64_emit_pop (compiler, regs, 0U);
+  } else {
+    orc_arm_emit_pop (compiler, regs, 0U);
+  }
   orc_arm_emit_bx_lr (compiler);
 }
 

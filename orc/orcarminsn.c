@@ -37,61 +37,22 @@ orc_arm_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs)
   if (regs) {
     int x = 0;
 
-    if (compiler->is_64bit) {
-      int count, stores;
-      int stack_increased = 0;
-      /** a number of 1s in regs */
-      count = orc_count_ones (regs);
-      /** AArch64 requires a 16-byte aligned stack pointer */
-      stores = (count-1)/2+1;
-      x = -1;
-      for(i=0;i<32;i++){
-        if (stores == 0) break;
-        if (regs & (1<<i)) {
-          if (stack_increased == 0) {
-            /** increase stack area & store registers */
-            if (count % 2 == 1) {
-              orc_arm64_emit_store_pre (compiler, 64, ORC_GP_REG_BASE+i,
-                  ORC_ARM64_SP, (stores--) * -16);
-              stack_increased = 1;
-              continue;
-            } else if (x != -1) {
-              orc_arm64_emit_store_pair_pre (compiler, 64, ORC_GP_REG_BASE+x,
-                  ORC_GP_REG_BASE+i, ORC_ARM64_SP, (stores--) * -16);
-              stack_increased = 1;
-              x = -1;
-              continue;
-            }
-          }
-
-          if (x != -1) {
-            /** store registers */
-            orc_arm64_emit_store_pair_reg (compiler, 64, ORC_GP_REG_BASE+x,
-                ORC_GP_REG_BASE+i, ORC_ARM64_SP, (stores--) * 16);
-            x = -1;
-          } else {
-            x = i;
-          }
+    ORC_ASM_CODE(compiler,"  push {");
+    for(i=0;i<16;i++){
+      if (regs & (1<<i)) {
+        x |= (1<<i);
+        ORC_ASM_CODE(compiler,"r%d", i);
+        if (x != regs) {
+          ORC_ASM_CODE(compiler,", ");
         }
       }
-    } else {
-      ORC_ASM_CODE(compiler,"  push {");
-      for(i=0;i<16;i++){
-        if (regs & (1<<i)) {
-          x |= (1<<i);
-          ORC_ASM_CODE(compiler,"r%d", i);
-          if (x != regs) {
-            ORC_ASM_CODE(compiler,", ");
-          }
-        }
-      }
-      ORC_ASM_CODE(compiler,"}\n");
-
-      orc_arm_emit (compiler, 0xe92d0000 | regs);
     }
+    ORC_ASM_CODE(compiler,"}\n");
+
+    orc_arm_emit (compiler, 0xe92d0000 | regs);
   }
 
-  if (!compiler->is_64bit && vregs) {
+  if (vregs) {
     int first = -1, last = -1, nregs;
 
     ORC_ASM_CODE(compiler, "  vpush {");
@@ -110,7 +71,6 @@ orc_arm_emit_push (OrcCompiler *compiler, int regs, orc_uint32 vregs)
     nregs = last + 1 - first + 1;
     orc_arm_emit (compiler, 0xed2d0b00 | (((first & 0x10) >> 4) << 22) | ((first & 0x0f) << 12) | (nregs << 1));
   }
-  // FIXME: Push vregs for AArch64 too
 }
 
 void
@@ -118,8 +78,7 @@ orc_arm_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs)
 {
   int i;
 
-
-  if (!compiler->is_64bit && vregs) {
+  if (vregs) {
     int first = -1, last = -1, nregs;
 
     ORC_ASM_CODE(compiler, "  vpop {");
@@ -137,55 +96,23 @@ orc_arm_emit_pop (OrcCompiler *compiler, int regs, orc_uint32 vregs)
     nregs = last + 1 - first + 1;
     orc_arm_emit (compiler, 0xecbd0b00 | (((first & 0x10) >> 4) << 22) | ((first & 0x0f) << 12) | (nregs << 1));
   }
-  // FIXME: Pop vregs for AArch64 too
 
   if (regs) {
     int x = 0;
 
-    if (compiler->is_64bit) {
-      int count, loads, tmp_loads;
-      /** a number of 1s in regs */
-      count = orc_count_ones (regs);
-      /** AArch64 requires a 16-byte aligned stack pointer */
-      loads = (count-1)/2+1;
-      tmp_loads = loads;
-      x = -1;
-      for(i=31;i>=0;i--){
-        if (regs & (1<<i)) {
-          if (x != -1) {
-            if (tmp_loads == 1) break;
-            /** load registers */
-            orc_arm64_emit_load_pair_reg (compiler, 64, ORC_GP_REG_BASE+i,
-                ORC_GP_REG_BASE+x, ORC_ARM64_SP, (loads - (--tmp_loads)) * 16);
-            x = -1;
-          } else {
-            x = i;
-          }
+    ORC_ASM_CODE(compiler,"  pop {");
+    for(i=0;i<16;i++){
+      if (regs & (1<<i)) {
+        x |= (1<<i);
+        ORC_ASM_CODE(compiler,"r%d", i);
+        if (x != regs) {
+          ORC_ASM_CODE(compiler,", ");
         }
       }
-      /** decrease stack area & load registers */
-      if (count % 2 == 1) {
-        orc_arm64_emit_load_post (compiler, 64, ORC_GP_REG_BASE+x,
-            ORC_ARM64_SP, loads * 16);
-      } else {
-        orc_arm64_emit_load_pair_post (compiler, 64, ORC_GP_REG_BASE+i,
-            ORC_GP_REG_BASE+x, ORC_ARM64_SP, loads * 16);
-      }
-    } else {
-      ORC_ASM_CODE(compiler,"  pop {");
-      for(i=0;i<16;i++){
-        if (regs & (1<<i)) {
-          x |= (1<<i);
-          ORC_ASM_CODE(compiler,"r%d", i);
-          if (x != regs) {
-            ORC_ASM_CODE(compiler,", ");
-          }
-        }
-      }
-      ORC_ASM_CODE(compiler,"}\n");
-
-      orc_arm_emit (compiler, 0xe8bd0000 | regs);
     }
+    ORC_ASM_CODE(compiler,"}\n");
+
+    orc_arm_emit (compiler, 0xe8bd0000 | regs);
   }
 }
 
