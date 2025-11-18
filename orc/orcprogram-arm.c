@@ -14,17 +14,17 @@
 
 #define SIZE 65536
 
-void orc_arm_emit_loop (OrcCompiler *compiler);
+static void orc_arm_emit_loop (OrcCompiler *compiler);
 
 void orc_compiler_orc_arm_register_rules (OrcTarget *target);
 
-void orc_compiler_orc_arm_init (OrcCompiler *compiler);
-unsigned int orc_compiler_orc_arm_get_default_flags (void);
-void orc_compiler_orc_arm_assemble (OrcCompiler *compiler);
+static void orc_compiler_orc_arm_init (OrcCompiler *compiler);
+static unsigned int orc_compiler_orc_arm_get_default_flags (void);
+static void orc_compiler_orc_arm_assemble (OrcCompiler *compiler);
 
-void arm_add_strides (OrcCompiler *compiler);
+static void arm_add_strides (OrcCompiler *compiler);
 
-void
+static void
 orc_arm_emit_prologue (OrcCompiler *compiler)
 {
   unsigned int regs = 0;
@@ -46,7 +46,7 @@ orc_arm_emit_prologue (OrcCompiler *compiler)
 
 }
 
-void
+static void
 orc_arm_emit_epilogue (OrcCompiler *compiler)
 {
   int i;
@@ -99,7 +99,7 @@ orc_arm_init (void)
   orc_compiler_orc_arm_register_rules (&orc_arm_target);
 }
 
-unsigned int
+static unsigned int
 orc_compiler_orc_arm_get_default_flags (void)
 {
 #if defined(HAVE_ARM)
@@ -109,7 +109,7 @@ orc_compiler_orc_arm_get_default_flags (void)
 #endif
 }
 
-void
+static void
 orc_compiler_orc_arm_init (OrcCompiler *compiler)
 {
   int i;
@@ -140,7 +140,7 @@ orc_compiler_orc_arm_init (OrcCompiler *compiler)
   compiler->loop_shift = 0;
 }
 
-void
+static void
 orc_arm_load_constants_outer (OrcCompiler *compiler)
 {
   int i;
@@ -185,7 +185,7 @@ orc_arm_load_constants_outer (OrcCompiler *compiler)
   }
 }
 
-void
+static void
 orc_arm_load_constants_inner (OrcCompiler *compiler)
 {
   int i;
@@ -207,7 +207,7 @@ orc_arm_load_constants_inner (OrcCompiler *compiler)
   }
 }
 
-void
+static void
 orc_compiler_orc_arm_assemble (OrcCompiler *compiler)
 {
   int dest_var = ORC_VAR_D1;
@@ -266,7 +266,7 @@ orc_compiler_orc_arm_assemble (OrcCompiler *compiler)
   orc_arm_do_fixups (compiler);
 }
 
-void
+static void
 orc_arm_emit_loop (OrcCompiler *compiler)
 {
   int j;
@@ -318,7 +318,7 @@ orc_arm_emit_loop (OrcCompiler *compiler)
   }
 }
 
-void
+static void
 arm_add_strides (OrcCompiler *compiler)
 {
   int i;
