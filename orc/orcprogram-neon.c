@@ -814,36 +814,7 @@ orc_neon_emit_loop (OrcCompiler *compiler, int unroll_index)
 
     orc_compiler_append_code(compiler,"# %d: %s", j, insn->opcode->name);
 
-    /* set up args */
-#if 0
-    for(k=0;k<opcode->n_src + opcode->n_dest;k++){
-      args[k] = compiler->vars + insn->args[k];
-      orc_compiler_append_code(compiler," %d", args[k]->alloc);
-      if (args[k]->is_chained) {
-        orc_compiler_append_code(compiler," (chained)");
-      }
-    }
-#endif
     orc_compiler_append_code(compiler,"\n");
-
-    for(k=0;k<ORC_STATIC_OPCODE_N_SRC;k++){
-      if (opcode->src_size[k] == 0) continue;
-
-      switch (compiler->vars[insn->src_args[k]].vartype) {
-        case ORC_VAR_TYPE_SRC:
-        case ORC_VAR_TYPE_DEST:
-          /* orc_neon_emit_load_src (compiler, &compiler->vars[insn->src_args[k]], unroll_index); */
-          break;
-        case ORC_VAR_TYPE_CONST:
-          break;
-        case ORC_VAR_TYPE_PARAM:
-          break;
-        case ORC_VAR_TYPE_TEMP:
-          break;
-        default:
-          break;
-      }
-    }
 
     compiler->insn_shift = compiler->loop_shift;
     if (insn->flags & ORC_INSTRUCTION_FLAG_X2) {
@@ -855,30 +826,9 @@ orc_neon_emit_loop (OrcCompiler *compiler, int unroll_index)
 
     rule = insn->rule;
     if (rule && rule->emit) {
-#if 0
-      if (compiler->vars[insn->dest_args[0]].alloc !=
-          compiler->vars[insn->src_args[0]].alloc) {
-        orc_neon_emit_mov (compiler, compiler->vars[insn->dest_args[0]].alloc,
-            compiler->vars[insn->src_args[0]].alloc);
-      }
-#endif
       rule->emit (compiler, rule->emit_user, insn);
     } else {
       orc_compiler_append_code(compiler,"No rule for: %s\n", opcode->name);
-    }
-
-    for(k=0;k<ORC_STATIC_OPCODE_N_DEST;k++){
-      if (opcode->dest_size[k] == 0) continue;
-
-      switch (compiler->vars[insn->dest_args[k]].vartype) {
-        case ORC_VAR_TYPE_DEST:
-          /* orc_neon_emit_store_dest (compiler, &compiler->vars[insn->dest_args[k]]); */
-          break;
-        case ORC_VAR_TYPE_TEMP:
-          break;
-        default:
-          break;
-      }
     }
   }
 
