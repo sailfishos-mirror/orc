@@ -23,22 +23,30 @@ static unsigned int orc_compiler_orc_arm_get_default_flags (void);
 static void orc_compiler_orc_arm_assemble (OrcCompiler *compiler);
 
 static void arm_add_strides (OrcCompiler *compiler);
+static unsigned int orc_arm_get_volatile_regs (const OrcCompiler *compiler);
 
-static void
-orc_arm_emit_prologue (OrcCompiler *compiler)
+static unsigned int
+orc_arm_get_non_volatile_regs (const OrcCompiler *compiler)
 {
   unsigned int regs = 0;
-  int i;
 
-  orc_compiler_append_code(compiler,".global %s\n", compiler->program->name);
-  orc_compiler_append_code(compiler,"%s:\n", compiler->program->name);
-
-  for(i=0;i<16;i++){
+  for (int i=0; i<16; i++) {
     if (compiler->used_regs[ORC_GP_REG_BASE + i] &&
         compiler->save_regs[ORC_GP_REG_BASE + i]) {
       regs |= (1<<i);
     }
   }
+
+  return regs;
+}
+
+static void
+orc_arm_emit_prologue (OrcCompiler *compiler)
+{
+  orc_compiler_append_code(compiler,".global %s\n", compiler->program->name);
+  orc_compiler_append_code(compiler,"%s:\n", compiler->program->name);
+
+  unsigned int regs = orc_arm_get_non_volatile_regs (compiler);
   if (compiler->is_64bit)
     orc_arm64_emit_push (compiler, regs, 0U);
   else
@@ -49,15 +57,7 @@ orc_arm_emit_prologue (OrcCompiler *compiler)
 static void
 orc_arm_emit_epilogue (OrcCompiler *compiler)
 {
-  int i;
-  unsigned int regs = 0;
-
-  for(i=0;i<16;i++){
-    if (compiler->used_regs[ORC_GP_REG_BASE + i] &&
-        compiler->save_regs[ORC_GP_REG_BASE + i]) {
-      regs |= (1<<i);
-    }
-  }
+  unsigned int regs = orc_arm_get_non_volatile_regs (compiler);
 
   if (compiler->is_64bit) {
     orc_arm64_emit_pop (compiler, regs, 0U);
