@@ -41,31 +41,39 @@ orc_arm_get_non_volatile_regs (const OrcCompiler *compiler)
 }
 
 static void
-orc_arm_emit_prologue (OrcCompiler *compiler)
+orc_arm32_emit_prologue (OrcCompiler *compiler)
 {
   orc_compiler_append_code(compiler,".global %s\n", compiler->program->name);
   orc_compiler_append_code(compiler,"%s:\n", compiler->program->name);
 
   unsigned int regs = orc_arm_get_non_volatile_regs (compiler);
-  if (compiler->is_64bit)
-    orc_arm64_emit_push (compiler, regs, 0U);
-  else
-    orc_arm_emit_push (compiler, regs, 0U);
-
+  orc_arm_emit_push (compiler, regs, 0U);
 }
 
 static void
-orc_arm_emit_epilogue (OrcCompiler *compiler)
+orc_arm64_emit_prologue (OrcCompiler *compiler)
+{
+  orc_compiler_append_code(compiler,".global %s\n", compiler->program->name);
+  orc_compiler_append_code(compiler,"%s:\n", compiler->program->name);
+
+  unsigned int regs = orc_arm_get_non_volatile_regs (compiler);
+  orc_arm64_emit_push (compiler, regs, 0U);
+}
+
+static void
+orc_arm32_emit_epilogue (OrcCompiler *compiler)
 {
   unsigned int regs = orc_arm_get_non_volatile_regs (compiler);
+  orc_arm_emit_pop (compiler, regs, 0U);
+  orc_arm_emit_bx_lr (compiler);
+}
 
-  if (compiler->is_64bit) {
-    orc_arm64_emit_pop (compiler, regs, 0U);
-    orc_arm64_emit_ret (compiler, ORC_ARM64_LR);
-  } else {
-    orc_arm_emit_pop (compiler, regs, 0U);
-    orc_arm_emit_bx_lr (compiler);
-  }
+static void
+orc_arm64_emit_epilogue (OrcCompiler *compiler)
+{
+  unsigned int regs = orc_arm_get_non_volatile_regs (compiler);
+  orc_arm64_emit_pop (compiler, regs, 0U);
+  orc_arm64_emit_ret (compiler, ORC_ARM64_LR);
 }
 
 static OrcTarget orc_arm_target = {
@@ -210,11 +218,18 @@ orc_arm_load_constants_inner (OrcCompiler *compiler)
 static void
 orc_compiler_orc_arm_assemble (OrcCompiler *compiler)
 {
+  if (compiler->is_64bit)
+    orc_compiler_orc_arm64_assemble (compiler);
+  else
+    orc_compiler_orc_arm32_assemble (compiler);
+}
+
+static void
+orc_compiler_orc_arm_assemble_common (OrcCompiler *compiler)
+{
   int dest_var = ORC_VAR_D1;
 
   compiler->vars[dest_var].is_aligned = FALSE;
-
-  orc_arm_emit_prologue (compiler);
 
   orc_arm_load_constants_outer (compiler);
 
@@ -260,9 +275,27 @@ orc_compiler_orc_arm_assemble (OrcCompiler *compiler)
         (int)ORC_STRUCT_OFFSET(OrcExecutor,params[ORC_VAR_A2]));
     orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, 8);
   }
+}
 
-  orc_arm_emit_epilogue (compiler);
+static void
+orc_compiler_orc_arm32_assemble (OrcCompiler *compiler)
+{
+  orc_arm32_emit_prologue (compiler);
 
+  orc_compiler_orc_arm_assemble_common ()
+
+  orc_arm32_emit_epilogue (compiler);
+  orc_arm_do_fixups (compiler);
+}
+
+static void
+orc_compiler_orc_arm64_assemble (OrcCompiler *compiler)
+{
+  orc_arm64_emit_prologue (compiler);
+
+  orc_compiler_orc_arm_assemble_common ()
+
+  orc_arm64_emit_epilogue (compiler);
   orc_arm_do_fixups (compiler);
 }
 
