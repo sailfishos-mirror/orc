@@ -27,21 +27,32 @@ enum RegionFlags {
   FLAG_REGION3 = (1 << 3),
 };
 
-static void orc_neon_emit_loop (OrcCompiler *compiler, int unroll_index);
+static void orc_neon_emit_loop_common (OrcCompiler *compiler, int unroll_index);
+static void orc_neon32_emit_loop (OrcCompiler *compiler, int unroll_index);
+static void orc_neon64_emit_loop (OrcCompiler *compiler, int unroll_index);
 
 extern void orc_compiler_neon_register_rules (OrcTarget *target);
 static unsigned int orc_compiler_neon_get_default_flags (void);
 static enum RegionFlags orc_compiler_neon_calc_regions (const OrcCompiler *compiler);
 
-static void orc_compiler_neon_init (OrcCompiler *compiler);
+static void orc_neon_compiler_init_common (OrcCompiler *compiler);
+static void orc_neon_compiler_init (OrcCompiler *compiler);
+static void orc_neon32_compiler_init (OrcCompiler *compiler);
+static void orc_neon64_compiler_init (OrcCompiler *compiler);
 static void orc_compiler_neon_assemble (OrcCompiler *compiler);
 static void orc_compiler_neon_assemble_32 (OrcCompiler *compiler);
 static void orc_compiler_neon_assemble_64 (OrcCompiler *compiler);
 
 static void orc_neon64_short_unaligned_loop (OrcCompiler *compiler);
 
-static void orc_neon_save_accumulators (OrcCompiler *compiler);
-static void neon_add_strides (OrcCompiler *compiler);
+static void orc_neon32_save_accumulators (OrcCompiler *compiler);
+static void orc_neon64_save_accumulators (OrcCompiler *compiler);
+static void orc_neon32_add_strides (OrcCompiler *compiler);
+static void orc_neon64_add_strides (OrcCompiler *compiler);
+static void orc_neon32_emit_prologue (OrcCompiler *compiler);
+static void orc_neon64_emit_prologue (OrcCompiler *compiler);
+static void orc_neon32_emit_epilogue (OrcCompiler *compiler);
+static void orc_neon64_emit_epilogue (OrcCompiler *compiler);
 
 static unsigned int orc_neon_get_callee_saved_regs (const OrcCompiler *compiler, int base, int n);
 
@@ -59,45 +70,59 @@ orc_neon_get_callee_saved_regs (const OrcCompiler *compiler, int base, int n)
 }
 
 static void
-orc_neon_emit_prologue (OrcCompiler *compiler)
+orc_neon32_emit_prologue (OrcCompiler *compiler)
 {
   unsigned int regs = 0;
   orc_uint32 vregs = 0;
-  int num_gregs;
 
   orc_compiler_append_code(compiler,".global %s\n", compiler->program->name);
   orc_compiler_append_code(compiler,"%s:\n", compiler->program->name);
 
-  num_gregs = compiler->is_64bit ? 32 : 16;
-
-  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, num_gregs);
+  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, 16);
   vregs = orc_neon_get_callee_saved_regs (compiler, ORC_VEC_REG_BASE, 32);
 
-  if (compiler->is_64bit)
-    orc_arm64_emit_push (compiler, regs, vregs);
-  else
-    orc_arm_emit_push (compiler, regs, vregs);
+  orc_arm_emit_push (compiler, regs, vregs);
 }
 
 static void
-orc_neon_emit_epilogue (OrcCompiler *compiler)
+orc_neon64_emit_prologue (OrcCompiler *compiler)
 {
-  int num_gregs;
   unsigned int regs = 0;
   orc_uint32 vregs = 0;
 
-  num_gregs = compiler->is_64bit ? 32 : 16;
+  orc_compiler_append_code(compiler,".global %s\n", compiler->program->name);
+  orc_compiler_append_code(compiler,"%s:\n", compiler->program->name);
 
-  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, num_gregs);
+  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, 32);
   vregs = orc_neon_get_callee_saved_regs (compiler, ORC_VEC_REG_BASE, 32);
 
-  if (compiler->is_64bit) {
-    orc_arm64_emit_pop (compiler, regs, vregs);
-    orc_arm64_emit_ret (compiler, ORC_ARM64_LR);
-  } else {
-    orc_arm_emit_pop (compiler, regs, vregs);
-    orc_arm_emit_bx_lr (compiler);
-  }
+  orc_arm64_emit_push (compiler, regs, vregs);
+}
+
+static void
+orc_neon32_emit_epilogue (OrcCompiler *compiler)
+{
+  unsigned int regs = 0;
+  orc_uint32 vregs = 0;
+
+  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, 16);
+  vregs = orc_neon_get_callee_saved_regs (compiler, ORC_VEC_REG_BASE, 32);
+
+  orc_arm_emit_pop (compiler, regs, vregs);
+  orc_arm_emit_bx_lr (compiler);
+}
+
+static void
+orc_neon64_emit_epilogue (OrcCompiler *compiler)
+{
+  unsigned int regs = 0;
+  orc_uint32 vregs = 0;
+
+  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, 32);
+  vregs = orc_neon_get_callee_saved_regs (compiler, ORC_VEC_REG_BASE, 32);
+
+  orc_arm64_emit_pop (compiler, regs, vregs);
+  orc_arm64_emit_ret (compiler, ORC_ARM64_LR);
 }
 
 static OrcTarget neon_target = {
@@ -109,7 +134,7 @@ static OrcTarget neon_target = {
 #endif
   ORC_VEC_REG_BASE,
   orc_compiler_neon_get_default_flags,
-  orc_compiler_neon_init,
+  orc_neon_compiler_init,
   orc_compiler_neon_assemble,
   { { 0 } }, 0,
   NULL,
@@ -184,60 +209,10 @@ orc_compiler_neon_calc_regions (const OrcCompiler *compiler)
 }
 
 static void
-orc_compiler_neon_init (OrcCompiler *compiler)
+orc_neon_compiler_init_common (OrcCompiler *compiler)
 {
   int i;
   int loop_shift;
-
-  if (compiler->target_flags & ORC_TARGET_NEON_64BIT) {
-    compiler->is_64bit = TRUE;
-  }
-
-  if (compiler->is_64bit) {
-    /** AArch64
-     * 31 64-bit generic-purpose registers (R0-R30) and SP
-     * 32 128-bit vector registers (do not overlap multiple registers in a narrower view)
-     * Note that PC is not a generic-purpose register in AArch64
-     */
-    for(i=ORC_GP_REG_BASE;i<ORC_GP_REG_BASE+32;i++){
-      compiler->valid_regs[i] = 1;
-    }
-    for(i=ORC_VEC_REG_BASE+0;i<ORC_VEC_REG_BASE+32;i++){
-      compiler->valid_regs[i] = 1;
-    }
-
-    compiler->valid_regs[ORC_ARM64_IP0] = 0;
-    compiler->valid_regs[ORC_ARM64_IP1] = 0;
-
-    compiler->valid_regs[ORC_ARM64_FP] = 0;
-    compiler->valid_regs[ORC_ARM64_LR] = 0;
-    compiler->valid_regs[ORC_ARM64_SP] = 0;
-
-    /** r19 to r29 are callee-saved */
-    for(i=19;i<29;i++) {
-      compiler->save_regs[ORC_GP_REG_BASE+i] = 1;
-    }
-  } else {
-    /** AArch32
-     * 16 32-bit generic-purpose registers (R0-R15)
-     * 32 64-bit vector registers (smaller registers are packed into larger ones)
-     */
-    for(i=ORC_GP_REG_BASE;i<ORC_GP_REG_BASE+16;i++){
-      compiler->valid_regs[i] = 1;
-    }
-    for(i=ORC_VEC_REG_BASE+0;i<ORC_VEC_REG_BASE+32;i+=2){
-      compiler->valid_regs[i] = 1;
-    }
-    /* compiler->valid_regs[ORC_ARM_SB] = 0; */
-    compiler->valid_regs[ORC_ARM_IP] = 0;
-    compiler->valid_regs[ORC_ARM_SP] = 0;
-    compiler->valid_regs[ORC_ARM_LR] = 0;
-    compiler->valid_regs[ORC_ARM_PC] = 0;
-
-    for(i=4;i<12;i++) {
-      compiler->save_regs[ORC_GP_REG_BASE+i] = 1;
-    }
-  }
 
   /** Both architectures have 8 callee-saved SIMD registers (v8-v15) */
   for(i=8;i<16;i++) {
@@ -251,13 +226,6 @@ orc_compiler_neon_init (OrcCompiler *compiler)
 
   compiler->exec_reg = ORC_ARM_A1;
   compiler->gp_tmpreg = ORC_ARM_A2;
-  if (compiler->is_64bit) {
-    compiler->tmpreg = ORC_VEC_REG_BASE + 0;
-    compiler->tmpreg2 = ORC_VEC_REG_BASE + 1;
-  } else {
-    compiler->tmpreg = ORC_VEC_REG_BASE + 0;
-    compiler->tmpreg2 = ORC_VEC_REG_BASE + 2;
-  }
   compiler->valid_regs[compiler->exec_reg] = 0;
   compiler->valid_regs[compiler->gp_tmpreg] = 0;
   compiler->valid_regs[compiler->tmpreg] = 0;
@@ -352,7 +320,110 @@ orc_compiler_neon_init (OrcCompiler *compiler)
 }
 
 static void
-orc_neon_load_constants_outer (OrcCompiler *compiler)
+orc_neon_compiler_init (OrcCompiler *compiler)
+{
+  if (compiler->target_flags & ORC_TARGET_NEON_64BIT)
+    orc_neon64_compiler_init (compiler);
+  else
+    orc_neon32_compiler_init (compiler);
+}
+
+static void
+orc_neon32_compiler_init (OrcCompiler *compiler)
+{
+  int i;
+
+  /** AArch32
+   * 16 32-bit generic-purpose registers (R0-R15)
+   * 32 64-bit vector registers (smaller registers are packed into larger ones)
+   */
+  for(i=ORC_GP_REG_BASE;i<ORC_GP_REG_BASE+16;i++){
+    compiler->valid_regs[i] = 1;
+  }
+  for(i=ORC_VEC_REG_BASE+0;i<ORC_VEC_REG_BASE+32;i+=2){
+    compiler->valid_regs[i] = 1;
+  }
+  /* compiler->valid_regs[ORC_ARM_SB] = 0; */
+  compiler->valid_regs[ORC_ARM_IP] = 0;
+  compiler->valid_regs[ORC_ARM_SP] = 0;
+  compiler->valid_regs[ORC_ARM_LR] = 0;
+  compiler->valid_regs[ORC_ARM_PC] = 0;
+
+  for(i=4;i<12;i++) {
+    compiler->save_regs[ORC_GP_REG_BASE+i] = 1;
+  }
+
+  compiler->tmpreg = ORC_VEC_REG_BASE + 0;
+  compiler->tmpreg2 = ORC_VEC_REG_BASE + 2;
+
+  orc_neon_compiler_init_common (compiler);
+}
+
+static void
+orc_neon64_compiler_init (OrcCompiler *compiler)
+{
+  int i;
+
+  compiler->is_64bit = TRUE;
+
+  /** AArch64
+   * 31 64-bit generic-purpose registers (R0-R30) and SP
+   * 32 128-bit vector registers (do not overlap multiple registers in a narrower view)
+   * Note that PC is not a generic-purpose register in AArch64
+   */
+  for(i=ORC_GP_REG_BASE;i<ORC_GP_REG_BASE+32;i++){
+    compiler->valid_regs[i] = 1;
+  }
+  for(i=ORC_VEC_REG_BASE+0;i<ORC_VEC_REG_BASE+32;i++){
+    compiler->valid_regs[i] = 1;
+  }
+
+  compiler->valid_regs[ORC_ARM64_IP0] = 0;
+  compiler->valid_regs[ORC_ARM64_IP1] = 0;
+
+  compiler->valid_regs[ORC_ARM64_FP] = 0;
+  compiler->valid_regs[ORC_ARM64_LR] = 0;
+  compiler->valid_regs[ORC_ARM64_SP] = 0;
+
+  /** r19 to r29 are callee-saved */
+  for(i=19;i<29;i++) {
+    compiler->save_regs[ORC_GP_REG_BASE+i] = 1;
+  }
+
+  compiler->tmpreg = ORC_VEC_REG_BASE + 0;
+  compiler->tmpreg2 = ORC_VEC_REG_BASE + 1;
+
+  orc_neon_compiler_init_common (compiler);
+}
+
+static void
+orc_neon32_load_constants_outer (OrcCompiler *compiler)
+{
+  for(int i = 0; i < ORC_N_COMPILER_VARIABLES; i++) {
+    if (compiler->vars[i].name == NULL) continue;
+    if (compiler->vars[i].vartype != ORC_VAR_TYPE_ACCUMULATOR) continue;
+
+    orc_neon_emit_loadil (compiler, &(compiler->vars[i]), 0);
+  }
+
+  orc_compiler_emit_invariants (compiler);
+}
+
+static void
+orc_neon64_load_constants_outer (OrcCompiler *compiler)
+{
+  for(int i = 0; i < ORC_N_COMPILER_VARIABLES; i++) {
+    if (compiler->vars[i].name == NULL) continue;
+    if (compiler->vars[i].vartype != ORC_VAR_TYPE_ACCUMULATOR) continue;
+
+    orc_neon_emit_loadil (compiler, &(compiler->vars[i]), 0);
+  }
+
+  orc_compiler_emit_invariants (compiler);
+}
+
+static void
+orc_neon32_load_constants_inner (OrcCompiler *compiler)
 {
   int i;
   for(i=0;i<ORC_N_COMPILER_VARIABLES;i++){
@@ -365,9 +436,16 @@ orc_neon_load_constants_outer (OrcCompiler *compiler)
         break;
       case ORC_VAR_TYPE_SRC:
       case ORC_VAR_TYPE_DEST:
+        orc_arm_emit_load_reg (compiler,
+            compiler->vars[i].ptr_register,
+            compiler->exec_reg, ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
+        if (compiler->vars[i].ptr_offset)
+            orc_arm_emit_eor_r(compiler, ORC_ARM_COND_AL, 0,
+                compiler->vars[i].ptr_offset,
+                compiler->vars[i].ptr_offset,
+                compiler->vars[i].ptr_offset);
         break;
       case ORC_VAR_TYPE_ACCUMULATOR:
-        orc_neon_emit_loadil (compiler, &(compiler->vars[i]), 0);
         break;
       case ORC_VAR_TYPE_TEMP:
         break;
@@ -376,12 +454,10 @@ orc_neon_load_constants_outer (OrcCompiler *compiler)
         break;
     }
   }
-
-  orc_compiler_emit_invariants (compiler);
 }
 
 static void
-orc_neon_load_constants_inner (OrcCompiler *compiler)
+orc_neon64_load_constants_inner (OrcCompiler *compiler)
 {
   int i;
   for(i=0;i<ORC_N_COMPILER_VARIABLES;i++){
@@ -394,25 +470,14 @@ orc_neon_load_constants_inner (OrcCompiler *compiler)
         break;
       case ORC_VAR_TYPE_SRC:
       case ORC_VAR_TYPE_DEST:
-        if (compiler->is_64bit) {
-          orc_arm64_emit_load_reg (compiler, 64,
-              compiler->vars[i].ptr_register,
-              compiler->exec_reg, ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
-          if (compiler->vars[i].ptr_offset)
-              orc_arm64_emit_eor(compiler, 64,
-                  compiler->vars[i].ptr_offset,
-                  compiler->vars[i].ptr_offset,
-                  compiler->vars[i].ptr_offset);
-        } else {
-          orc_arm_emit_load_reg (compiler,
-              compiler->vars[i].ptr_register,
-              compiler->exec_reg, ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
-          if (compiler->vars[i].ptr_offset)
-              orc_arm_emit_eor_r(compiler, ORC_ARM_COND_AL, 0,
-                  compiler->vars[i].ptr_offset,
-                  compiler->vars[i].ptr_offset,
-                  compiler->vars[i].ptr_offset);
-        }
+        orc_arm64_emit_load_reg (compiler, 64,
+            compiler->vars[i].ptr_register,
+            compiler->exec_reg, ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
+        if (compiler->vars[i].ptr_offset)
+            orc_arm64_emit_eor(compiler, 64,
+                compiler->vars[i].ptr_offset,
+                compiler->vars[i].ptr_offset,
+                compiler->vars[i].ptr_offset);
         break;
       case ORC_VAR_TYPE_ACCUMULATOR:
         break;
@@ -673,7 +738,7 @@ orc_neon64_short_unaligned_loop (OrcCompiler *compiler)
       (int)ORC_STRUCT_OFFSET(OrcExecutor,counter3));
 
   /** load function arguments */
-  orc_neon_load_constants_inner (compiler);
+  orc_neon64_load_constants_inner (compiler);
 
   /** if counter2 == zero, go to LABEL_REGION2_SKIP */
   orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_IP0, compiler->exec_reg,
@@ -687,7 +752,7 @@ orc_neon64_short_unaligned_loop (OrcCompiler *compiler)
   orc_arm64_emit_subs_imm (compiler, 32, ORC_ARM64_IP0, ORC_ARM64_IP0, 1);
 
   /** vector instructions: @todo port to aarch64 */
-  orc_neon_emit_loop (compiler, -1);
+  orc_neon64_emit_loop (compiler, -1);
 
   /** if counter2 != zero, repeat loop */
   orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION0_LOOP);
@@ -724,7 +789,7 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   orc_arm_emit_label (compiler, LABEL_REGION2_LOOP_LARGE);
   orc_arm64_emit_subs_imm (compiler, 32, ORC_ARM64_IP0, ORC_ARM64_IP0, 1);
   for(i=0;i<(1<<compiler->unroll_shift);i++){
-    orc_neon_emit_loop (compiler, i);
+    orc_neon64_emit_loop (compiler, i);
   }
   orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_LARGE);
   /** DONE, let's finish */
@@ -741,7 +806,7 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   orc_arm_emit_label (compiler, LABEL_REGION2_LOOP_MEDIUM);
   orc_arm64_emit_subs_imm (compiler, 32, ORC_ARM64_IP0, ORC_ARM64_IP0, 1);
   for(i=0;i<(1<<compiler->unroll_shift);i++){
-    orc_neon_emit_loop (compiler, i);
+    orc_neon64_emit_loop (compiler, i);
   }
   orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_MEDIUM);
   orc_arm64_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
@@ -752,7 +817,7 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   orc_arm_emit_label (compiler, LABEL_REGION2_LOOP_SMALL);
   orc_arm64_emit_subs_imm (compiler, 32, ORC_ARM64_IP0, ORC_ARM64_IP0, 1);
   for(i=0;i<(1<<compiler->unroll_shift);i++){
-    orc_neon_emit_loop (compiler, i);
+    orc_neon64_emit_loop (compiler, i);
   }
   orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_SMALL);
 
@@ -769,7 +834,7 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   orc_arm64_emit_branch (compiler, ORC_ARM_COND_EQ, label_skip); \
   orc_arm_emit_label (compiler, label_loop); \
   orc_arm64_emit_subs_imm (compiler, 32, ORC_ARM64_IP0, ORC_ARM64_IP0, 1); \
-  orc_neon_emit_loop (compiler, -1); \
+  orc_neon64_emit_loop (compiler, -1); \
   orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, label_loop); \
   orc_arm_emit_label (compiler, label_skip); \
   compiler->loop_shift = save_loop_shift; \
@@ -829,7 +894,7 @@ orc_neon64_emit_inc_pointers (OrcCompiler *compiler)
 }
 
 static void
-orc_neon_emit_loop (OrcCompiler *compiler, int unroll_index)
+orc_neon_emit_loop_common (OrcCompiler *compiler, int unroll_index)
 {
   int j;
   OrcInstruction *insn;
@@ -864,11 +929,20 @@ orc_neon_emit_loop (OrcCompiler *compiler, int unroll_index)
       orc_compiler_append_code(compiler,"No rule for: %s\n", opcode->name);
     }
   }
+}
 
-  if (compiler->is_64bit)
-    orc_neon64_emit_inc_pointers (compiler);
-  else
-    orc_neon32_emit_inc_pointers (compiler);
+static void
+orc_neon32_emit_loop (OrcCompiler *compiler, int unroll_index)
+{
+  orc_neon_emit_loop_common (compiler, unroll_index);
+  orc_neon32_emit_inc_pointers (compiler);
+}
+
+static void
+orc_neon64_emit_loop (OrcCompiler *compiler, int unroll_index)
+{
+  orc_neon_emit_loop_common (compiler, unroll_index);
+  orc_neon64_emit_inc_pointers (compiler);
 }
 
 static void
@@ -888,7 +962,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
 
   compiler->vars[align_var].is_aligned = FALSE;
 
-  orc_neon_emit_prologue (compiler);
+  orc_neon32_emit_prologue (compiler);
 
   if (orc_compiler_has_float (compiler)) {
     set_fpscr = TRUE;
@@ -902,7 +976,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     orc_arm_emit (compiler, 0xeee10a10 | ((compiler->gp_tmpreg&0xf)<<12));
   }
 
-  orc_neon_load_constants_outer (compiler);
+  orc_neon32_load_constants_outer (compiler);
 
   if (compiler->program->is_2d) {
     if (compiler->program->constant_m > 0) {
@@ -936,7 +1010,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     orc_arm_emit_store_reg (compiler, ORC_ARM_A3, compiler->exec_reg,
         (int)ORC_STRUCT_OFFSET(OrcExecutor,counter3));
 
-    orc_neon_load_constants_inner (compiler);
+    orc_neon32_load_constants_inner (compiler);
     orc_arm_emit_load_reg (compiler, ORC_ARM_IP, compiler->exec_reg,
         (int)ORC_STRUCT_OFFSET(OrcExecutor,counter2));
     orc_arm_emit_cmp_imm (compiler, ORC_ARM_IP, 0);
@@ -945,7 +1019,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     compiler->size_region = 0;
     orc_arm_emit_label (compiler, LABEL_REGION0_LOOP);
 
-    orc_neon_emit_loop (compiler, -1);
+    orc_neon32_emit_loop (compiler, -1);
     orc_arm_emit_sub_imm (compiler, ORC_ARM_IP, ORC_ARM_IP, 1, TRUE);
     orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION0_LOOP);
     orc_arm_emit_branch (compiler, ORC_ARM_COND_AL, LABEL_REGION2_SKIP);
@@ -998,7 +1072,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     orc_arm_emit_label (compiler, LABEL_ONE_REGION_AFTER);
   }
 
-  orc_neon_load_constants_inner (compiler);
+  orc_neon32_load_constants_inner (compiler);
 
   if (compiler->loop_shift > 0) {
     int save_loop_shift = compiler->loop_shift;
@@ -1011,7 +1085,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     orc_arm_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION1_SKIP);
 
     orc_arm_emit_label (compiler, LABEL_REGION1_LOOP);
-    orc_neon_emit_loop (compiler, -1);
+    orc_neon32_emit_loop (compiler, -1);
     orc_arm_emit_sub_imm (compiler, ORC_ARM_IP, ORC_ARM_IP, 1, TRUE);
     orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION1_LOOP);
     orc_arm_emit_label (compiler, LABEL_REGION1_SKIP);
@@ -1040,7 +1114,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
   compiler->size_region = 3;
   orc_arm_emit_label (compiler, LABEL_REGION2_LOOP_LARGE);
   for(i=0;i<(1<<compiler->unroll_shift);i++){
-    orc_neon_emit_loop (compiler, i);
+    orc_neon32_emit_loop (compiler, i);
   }
   orc_arm_emit_sub_imm (compiler, ORC_ARM_IP, ORC_ARM_IP, 1, TRUE);
   orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_LARGE);
@@ -1056,7 +1130,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
   compiler->size_region = 2;
   orc_arm_emit_label (compiler, LABEL_REGION2_LOOP_MEDIUM);
   for(i=0;i<(1<<compiler->unroll_shift);i++){
-    orc_neon_emit_loop (compiler, i);
+    orc_neon32_emit_loop (compiler, i);
   }
   orc_arm_emit_sub_imm (compiler, ORC_ARM_IP, ORC_ARM_IP, 1, TRUE);
   orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_MEDIUM);
@@ -1067,7 +1141,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
   compiler->size_region = 1;
   orc_arm_emit_label (compiler, LABEL_REGION2_LOOP_SMALL);
   for(i=0;i<(1<<compiler->unroll_shift);i++){
-    orc_neon_emit_loop (compiler, i);
+    orc_neon32_emit_loop (compiler, i);
   }
   orc_arm_emit_sub_imm (compiler, ORC_ARM_IP, ORC_ARM_IP, 1, TRUE);
   orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION2_LOOP_SMALL);
@@ -1088,7 +1162,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     orc_arm_emit_branch (compiler, ORC_ARM_COND_EQ, LABEL_REGION3_SKIP);
 
     orc_arm_emit_label (compiler, LABEL_REGION3_LOOP);
-    orc_neon_emit_loop (compiler, -1);
+    orc_neon32_emit_loop (compiler, -1);
     orc_arm_emit_sub_imm (compiler, ORC_ARM_IP, ORC_ARM_IP, 1, TRUE);
     orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION3_LOOP);
     orc_arm_emit_label (compiler, LABEL_REGION3_SKIP);
@@ -1097,7 +1171,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
   }
 
   if (compiler->program->is_2d) {
-    neon_add_strides (compiler);
+    orc_neon32_add_strides (compiler);
 
     orc_arm_emit_load_reg (compiler, ORC_ARM_A3, compiler->exec_reg,
         (int)ORC_STRUCT_OFFSET(OrcExecutor, params[ORC_VAR_A2]));
@@ -1107,7 +1181,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     orc_arm_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_OUTER_LOOP);
   }
 
-  orc_neon_save_accumulators (compiler);
+  orc_neon32_save_accumulators (compiler);
 
   if (set_fpscr) {
     ORC_ASM_CODE (compiler,"  pop %s\n", orc_arm_reg_name (compiler->gp_tmpreg));
@@ -1117,7 +1191,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
     orc_arm_emit (compiler, 0xeee10a10 | ((compiler->gp_tmpreg&0xf)<<12));
   }
 
-  orc_neon_emit_epilogue (compiler);
+  orc_neon32_emit_epilogue (compiler);
 
   orc_arm_emit_align (compiler, 4);
 
@@ -1152,9 +1226,9 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
 
   compiler->vars[align_var].is_aligned = FALSE;
 
-  orc_neon_emit_prologue (compiler);
+  orc_neon64_emit_prologue (compiler);
 
-  orc_neon_load_constants_outer (compiler);
+  orc_neon64_load_constants_outer (compiler);
 
   if (compiler->program->is_2d) {
     if (compiler->program->constant_m > 0) {
@@ -1178,10 +1252,10 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
     ORC_DEBUG("unrolled loops     = %d", num_loops);
     ORC_DEBUG("remaining elements = %d", remaining);
 
-    orc_neon_load_constants_inner (compiler);
+    orc_neon64_load_constants_inner (compiler);
 
     for (int i = 0; i < num_loops; i++) {
-      orc_neon_emit_loop (compiler, i);
+      orc_neon64_emit_loop (compiler, i);
     }
 
     if (region3) {
@@ -1191,7 +1265,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
 
       int save_loop_shift = compiler->loop_shift; // Ugly, but...uff
       compiler->loop_shift = 0;
-      orc_neon_emit_loop (compiler, -1);
+      orc_neon64_emit_loop (compiler, -1);
       compiler->loop_shift = save_loop_shift;
 
       orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_REGION3_LOOP);
@@ -1202,7 +1276,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
 
     orc_neon64_set_region_counters (compiler);
 
-    orc_neon_load_constants_inner (compiler);
+    orc_neon64_load_constants_inner (compiler);
 
     orc_neon64_loop_shift_remainder (compiler, counter1,
         LABEL_REGION1_LOOP, LABEL_REGION1_SKIP);
@@ -1217,7 +1291,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
     orc_neon64_loop_shift_remainder (compiler, counter3,
         LABEL_REGION3_LOOP, LABEL_REGION3_SKIP);
   } else {
-    orc_neon_load_constants_inner (compiler);
+    orc_neon64_load_constants_inner (compiler);
 
     orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_IP0, compiler->exec_reg,
         (int)ORC_STRUCT_OFFSET(OrcExecutor,n));
@@ -1226,7 +1300,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
   }
 
   if (compiler->program->is_2d) {
-    neon_add_strides (compiler);
+    orc_neon64_add_strides (compiler);
 
     orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_IP1, compiler->exec_reg,
         (int)ORC_STRUCT_OFFSET(OrcExecutor, params[ORC_VAR_A2]));
@@ -1236,9 +1310,9 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
     orc_arm64_emit_branch (compiler, ORC_ARM_COND_NE, LABEL_OUTER_LOOP);
   }
 
-  orc_neon_save_accumulators (compiler);
+  orc_neon64_save_accumulators (compiler);
 
-  orc_neon_emit_epilogue (compiler);
+  orc_neon64_emit_epilogue (compiler);
 
   orc_arm64_emit_align (compiler, 4);
 
@@ -1255,7 +1329,7 @@ orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
    ((((c)>>4)&0x1)<<5))
 
 static void
-orc_neon_save_accumulators (OrcCompiler *compiler)
+orc_neon32_save_accumulators (OrcCompiler *compiler)
 {
   int i;
   int src;
@@ -1268,109 +1342,129 @@ orc_neon_save_accumulators (OrcCompiler *compiler)
     switch (compiler->vars[i].vartype) {
       case ORC_VAR_TYPE_ACCUMULATOR:
         src = compiler->vars[i].alloc;
-
-        if (compiler->is_64bit) {
-          orc_arm64_emit_add_imm (compiler, 64, compiler->gp_tmpreg,
-	    compiler->exec_reg,
-	    ORC_STRUCT_OFFSET(OrcExecutor, accumulators[i-ORC_VAR_A1]));
-	} else {
-          orc_arm_emit_load_imm (compiler, compiler->gp_tmpreg,
-              ORC_STRUCT_OFFSET(OrcExecutor, accumulators[i-ORC_VAR_A1]));
-          orc_arm_emit_add (compiler, compiler->gp_tmpreg,
-              compiler->gp_tmpreg, compiler->exec_reg);
-        }
+        orc_arm_emit_load_imm (compiler, compiler->gp_tmpreg,
+            ORC_STRUCT_OFFSET(OrcExecutor, accumulators[i-ORC_VAR_A1]));
+        orc_arm_emit_add (compiler, compiler->gp_tmpreg,
+            compiler->gp_tmpreg, compiler->exec_reg);
         switch (var->size) {
           case 2:
             if (compiler->loop_shift > 0) {
-              if (compiler->is_64bit) {
-                ORC_ASM_CODE(compiler,"  addv %s, %s, %s\n",
-                    orc_neon64_reg_name_vector (src, 8, 0),
-                    orc_neon64_reg_name_vector (src, 8, 0),
-                    orc_neon64_reg_name_vector (src, 8, 0));
-                code = 0x0e71b800;
-                code |= (src&0x1f)<<5;
-                code |= (src&0x1f);
-                orc_arm_emit (compiler, code);
-              } else {
-                ORC_ASM_CODE(compiler,"  vpaddl.u16 %s, %s\n",
-                    orc_neon_reg_name (src),
-                    orc_neon_reg_name (src));
-                code = 0xf3b40280;
-                code |= (src&0xf) << 12;
-                code |= ((src>>4)&0x1) << 22;
-                code |= (src&0xf) << 0;
-                orc_arm_emit (compiler, code);
-
-                ORC_ASM_CODE(compiler,"  vpaddl.u32 %s, %s\n",
-                    orc_neon_reg_name (src),
-                    orc_neon_reg_name (src));
-                code = 0xf3b80280;
-                code |= (src&0xf) << 12;
-                code |= ((src>>4)&0x1) << 22;
-                code |= (src&0xf) << 0;
-                orc_arm_emit (compiler, code);
-              }
-            }
-
-            if (compiler->is_64bit) {
-              ORC_ASM_CODE(compiler,"  st1 %s, [%s]\n",
-                  orc_neon64_reg_name_vector (src, 8, 0),
-                  orc_arm64_reg_name (compiler->gp_tmpreg, 64));
-              code = 0x0d004000;
-              code |= (compiler->gp_tmpreg&0x1f) << 5;
-              code |= (src&0x1f) << 0;
-              orc_arm_emit (compiler, code);
-            } else {
-              ORC_ASM_CODE(compiler,"  vst1.16 %s[%d], [%s]\n",
-                  orc_neon_reg_name (src), 0,
-                  orc_arm_reg_name (compiler->gp_tmpreg));
-              code = 0xf480040f;
-              code |= (compiler->gp_tmpreg&0xf) << 16;
+              ORC_ASM_CODE(compiler,"  vpaddl.u16 %s, %s\n",
+                  orc_neon_reg_name (src),
+                  orc_neon_reg_name (src));
+              code = 0xf3b40280;
               code |= (src&0xf) << 12;
               code |= ((src>>4)&0x1) << 22;
+              code |= (src&0xf) << 0;
+              orc_arm_emit (compiler, code);
+
+              ORC_ASM_CODE(compiler,"  vpaddl.u32 %s, %s\n",
+                  orc_neon_reg_name (src),
+                  orc_neon_reg_name (src));
+              code = 0xf3b80280;
+              code |= (src&0xf) << 12;
+              code |= ((src>>4)&0x1) << 22;
+              code |= (src&0xf) << 0;
               orc_arm_emit (compiler, code);
             }
+
+            ORC_ASM_CODE(compiler,"  vst1.16 %s[%d], [%s]\n",
+                orc_neon_reg_name (src), 0,
+                orc_arm_reg_name (compiler->gp_tmpreg));
+            code = 0xf480040f;
+            code |= (compiler->gp_tmpreg&0xf) << 16;
+            code |= (src&0xf) << 12;
+            code |= ((src>>4)&0x1) << 22;
+            orc_arm_emit (compiler, code);
             break;
           case 4:
             if (compiler->loop_shift > 0) {
-              if (compiler->is_64bit) {
-                ORC_ASM_CODE(compiler,"  addp %s, %s, %s\n",
-                    orc_neon64_reg_name_vector (src, 8, 0),
-                    orc_neon64_reg_name_vector (src, 8, 0),
-                    orc_neon64_reg_name_vector (src, 8, 0));
-                code = 0x0ea0bc00;
-                code |= (src&0x1f)<<16;
-                code |= (src&0x1f)<<5;
-                code |= (src&0x1f);
-                orc_arm_emit (compiler, code);
-              } else {
-                ORC_ASM_CODE(compiler,"  vpadd.u32 %s, %s, %s\n",
-                    orc_neon_reg_name (src),
-                    orc_neon_reg_name (src),
-                    orc_neon_reg_name (src));
-                code = NEON_BINARY(0xf2200b10, src, src, src);
-                orc_arm_emit (compiler, code);
-              }
+              ORC_ASM_CODE(compiler,"  vpadd.u32 %s, %s, %s\n",
+                  orc_neon_reg_name (src),
+                  orc_neon_reg_name (src),
+                  orc_neon_reg_name (src));
+              code = NEON_BINARY(0xf2200b10, src, src, src);
+              orc_arm_emit (compiler, code);
             }
 
-            if (compiler->is_64bit) {
-              ORC_ASM_CODE(compiler,"  st1 {%s}[0], [%s]\n",
+            ORC_ASM_CODE(compiler,"  vst1.32 %s[%d], [%s]\n",
+                orc_neon_reg_name (src), 0,
+                orc_arm_reg_name (compiler->gp_tmpreg));
+            code = 0xf480080f;
+            code |= (compiler->gp_tmpreg&0xf) << 16;
+            code |= (src&0xf) << 12;
+            code |= ((src>>4)&0x1) << 22;
+            orc_arm_emit (compiler, code);
+            break;
+          default:
+            ORC_ERROR("bad size");
+        }
+
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+static void
+orc_neon64_save_accumulators (OrcCompiler *compiler)
+{
+  int i;
+  int src;
+  unsigned int code;
+
+  for(i=0;i<ORC_N_COMPILER_VARIABLES;i++){
+    OrcVariable *var = compiler->vars + i;
+
+    if (compiler->vars[i].name == NULL) continue;
+    switch (compiler->vars[i].vartype) {
+      case ORC_VAR_TYPE_ACCUMULATOR:
+        src = compiler->vars[i].alloc;
+        orc_arm64_emit_add_imm (compiler, 64, compiler->gp_tmpreg,
+            compiler->exec_reg,
+            ORC_STRUCT_OFFSET(OrcExecutor, accumulators[i-ORC_VAR_A1]));
+        switch (var->size) {
+          case 2:
+            if (compiler->loop_shift > 0) {
+              ORC_ASM_CODE(compiler,"  addv %s, %s, %s\n",
                   orc_neon64_reg_name_vector (src, 8, 0),
-                  orc_arm64_reg_name (compiler->gp_tmpreg, 64));
-              code = 0x0d008000;
-              code |= (compiler->gp_tmpreg&0x1f) << 5;
-              code |= (src&0x1f) << 0;
-              orc_arm_emit (compiler, code);
-            } else {
-              ORC_ASM_CODE(compiler,"  vst1.32 %s[%d], [%s]\n",
-                  orc_neon_reg_name (src), 0,
-                  orc_arm_reg_name (compiler->gp_tmpreg));
-              code = 0xf480080f;
-              code |= (compiler->gp_tmpreg&0xf) << 16;
-              code |= (src&0xf) << 12;
-              code |= ((src>>4)&0x1) << 22;
+                  orc_neon64_reg_name_vector (src, 8, 0),
+                  orc_neon64_reg_name_vector (src, 8, 0));
+              code = 0x0e71b800;
+              code |= (src&0x1f)<<5;
+              code |= (src&0x1f);
               orc_arm_emit (compiler, code);
             }
+
+            ORC_ASM_CODE(compiler,"  st1 %s, [%s]\n",
+                orc_neon64_reg_name_vector (src, 8, 0),
+                orc_arm64_reg_name (compiler->gp_tmpreg, 64));
+            code = 0x0d004000;
+            code |= (compiler->gp_tmpreg&0x1f) << 5;
+            code |= (src&0x1f) << 0;
+            orc_arm_emit (compiler, code);
+            break;
+          case 4:
+            if (compiler->loop_shift > 0) {
+              ORC_ASM_CODE(compiler,"  addp %s, %s, %s\n",
+                  orc_neon64_reg_name_vector (src, 8, 0),
+                  orc_neon64_reg_name_vector (src, 8, 0),
+                  orc_neon64_reg_name_vector (src, 8, 0));
+              code = 0x0ea0bc00;
+              code |= (src&0x1f)<<16;
+              code |= (src&0x1f)<<5;
+              code |= (src&0x1f);
+              orc_arm_emit (compiler, code);
+            }
+
+            ORC_ASM_CODE(compiler,"  st1 {%s}[0], [%s]\n",
+                orc_neon64_reg_name_vector (src, 8, 0),
+                orc_arm64_reg_name (compiler->gp_tmpreg, 64));
+            code = 0x0d008000;
+            code |= (compiler->gp_tmpreg&0x1f) << 5;
+            code |= (src&0x1f) << 0;
+            orc_arm_emit (compiler, code);
             break;
           default:
             ORC_ERROR("bad size");
@@ -1384,7 +1478,7 @@ orc_neon_save_accumulators (OrcCompiler *compiler)
 }
 
 void
-neon_add_strides (OrcCompiler *compiler)
+orc_neon32_add_strides (OrcCompiler *compiler)
 {
   int i;
 
@@ -1397,23 +1491,13 @@ neon_add_strides (OrcCompiler *compiler)
         break;
       case ORC_VAR_TYPE_SRC:
       case ORC_VAR_TYPE_DEST:
-        if (compiler->is_64bit) {
-          orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_IP1, compiler->exec_reg,
-              (int)ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
-          orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_R18, compiler->exec_reg,
-              (int)ORC_STRUCT_OFFSET(OrcExecutor, params[i]));
-          orc_arm64_emit_add (compiler, 32, ORC_ARM64_IP1, ORC_ARM64_IP1, ORC_ARM64_R18);
-          orc_arm64_emit_store_reg (compiler, 32, ORC_ARM64_IP1, compiler->exec_reg,
-              (int)ORC_STRUCT_OFFSET(OrcExecutor,arrays[i]));
-        } else {
-          orc_arm_emit_load_reg (compiler, ORC_ARM_A3, compiler->exec_reg,
-              (int)ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
-          orc_arm_emit_load_reg (compiler, ORC_ARM_A2, compiler->exec_reg,
-              (int)ORC_STRUCT_OFFSET(OrcExecutor, params[i]));
-          orc_arm_emit_add (compiler, ORC_ARM_A3, ORC_ARM_A3, ORC_ARM_A2);
-          orc_arm_emit_store_reg (compiler, ORC_ARM_A3, compiler->exec_reg,
-              (int)ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
-        }
+        orc_arm_emit_load_reg (compiler, ORC_ARM_A3, compiler->exec_reg,
+            (int)ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
+        orc_arm_emit_load_reg (compiler, ORC_ARM_A2, compiler->exec_reg,
+            (int)ORC_STRUCT_OFFSET(OrcExecutor, params[i]));
+        orc_arm_emit_add (compiler, ORC_ARM_A3, ORC_ARM_A3, ORC_ARM_A2);
+        orc_arm_emit_store_reg (compiler, ORC_ARM_A3, compiler->exec_reg,
+            (int)ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
         break;
       case ORC_VAR_TYPE_ACCUMULATOR:
         break;
@@ -1426,3 +1510,35 @@ neon_add_strides (OrcCompiler *compiler)
   }
 }
 
+void
+orc_neon64_add_strides (OrcCompiler *compiler)
+{
+  int i;
+
+  for(i=0;i<ORC_N_COMPILER_VARIABLES;i++){
+    if (compiler->vars[i].name == NULL) continue;
+    switch (compiler->vars[i].vartype) {
+      case ORC_VAR_TYPE_CONST:
+        break;
+      case ORC_VAR_TYPE_PARAM:
+        break;
+      case ORC_VAR_TYPE_SRC:
+      case ORC_VAR_TYPE_DEST:
+        orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_IP1, compiler->exec_reg,
+            (int)ORC_STRUCT_OFFSET(OrcExecutor, arrays[i]));
+        orc_arm64_emit_load_reg (compiler, 32, ORC_ARM64_R18, compiler->exec_reg,
+            (int)ORC_STRUCT_OFFSET(OrcExecutor, params[i]));
+        orc_arm64_emit_add (compiler, 32, ORC_ARM64_IP1, ORC_ARM64_IP1, ORC_ARM64_R18);
+        orc_arm64_emit_store_reg (compiler, 32, ORC_ARM64_IP1, compiler->exec_reg,
+            (int)ORC_STRUCT_OFFSET(OrcExecutor,arrays[i]));
+        break;
+      case ORC_VAR_TYPE_ACCUMULATOR:
+        break;
+      case ORC_VAR_TYPE_TEMP:
+        break;
+      default:
+        ORC_COMPILER_ERROR(compiler,"bad vartype");
+        break;
+    }
+  }
+}
