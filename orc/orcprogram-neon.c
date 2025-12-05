@@ -43,6 +43,20 @@ static void orc_neon64_short_unaligned_loop (OrcCompiler *compiler);
 static void orc_neon_save_accumulators (OrcCompiler *compiler);
 static void neon_add_strides (OrcCompiler *compiler);
 
+static unsigned int orc_neon_get_callee_saved_regs (const OrcCompiler *compiler, int base, int n);
+
+
+static unsigned int
+orc_neon_get_callee_saved_regs (const OrcCompiler *compiler, int base, int n)
+{
+  int regs = 0;
+
+  for(int i = 0; i < n; i++)
+    if (compiler->used_regs[base + i] && compiler->save_regs[base + i])
+      regs |= (1 << i);
+
+  return regs;
+}
 
 static void
 orc_neon_emit_prologue (OrcCompiler *compiler)
@@ -50,26 +64,14 @@ orc_neon_emit_prologue (OrcCompiler *compiler)
   unsigned int regs = 0;
   orc_uint32 vregs = 0;
   int num_gregs;
-  int i;
 
   orc_compiler_append_code(compiler,".global %s\n", compiler->program->name);
   orc_compiler_append_code(compiler,"%s:\n", compiler->program->name);
 
   num_gregs = compiler->is_64bit ? 32 : 16;
 
-  for(i=0;i<num_gregs;i++){
-    if (compiler->used_regs[ORC_GP_REG_BASE + i] &&
-        compiler->save_regs[ORC_GP_REG_BASE + i]) {
-      regs |= (1<<i);
-    }
-  }
-
-  for(i=0;i<32;i++) {
-     if (compiler->used_regs[ORC_VEC_REG_BASE+i] &&
-         compiler->save_regs[ORC_VEC_REG_BASE+i]) {
-        vregs |= (1U << i);
-     }
-  }
+  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, num_gregs);
+  vregs = orc_neon_get_callee_saved_regs (compiler, ORC_VEC_REG_BASE, 32);
 
   if (compiler->is_64bit)
     orc_arm64_emit_push (compiler, regs, vregs);
@@ -80,26 +82,14 @@ orc_neon_emit_prologue (OrcCompiler *compiler)
 static void
 orc_neon_emit_epilogue (OrcCompiler *compiler)
 {
-  int i;
   int num_gregs;
   unsigned int regs = 0;
   orc_uint32 vregs = 0;
 
   num_gregs = compiler->is_64bit ? 32 : 16;
 
-  for(i=0;i<num_gregs;i++){
-    if (compiler->used_regs[ORC_GP_REG_BASE + i] &&
-        compiler->save_regs[ORC_GP_REG_BASE + i]) {
-      regs |= (1<<i);
-    }
-  }
-
-  for(i=0;i<32;i++) {
-     if (compiler->used_regs[ORC_VEC_REG_BASE+i] &&
-         compiler->save_regs[ORC_VEC_REG_BASE+i]) {
-        vregs |= (1U << i);
-     }
-  }
+  regs = orc_neon_get_callee_saved_regs (compiler, ORC_GP_REG_BASE, num_gregs);
+  vregs = orc_neon_get_callee_saved_regs (compiler, ORC_VEC_REG_BASE, 32);
 
   if (compiler->is_64bit) {
     orc_arm64_emit_pop (compiler, regs, vregs);
