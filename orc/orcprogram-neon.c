@@ -402,51 +402,6 @@ orc_neon_load_constants_outer (OrcCompiler *compiler)
   }
 
   orc_compiler_emit_invariants (compiler);
-
-  for(i=0;i<compiler->n_insns;i++){
-    OrcInstruction *insn = compiler->insns + i;
-    OrcStaticOpcode *opcode = insn->opcode;
-
-    if (strcmp (opcode->name, "loadupdb") == 0) {
-      if (compiler->vars[insn->src_args[1]].vartype == ORC_VAR_TYPE_PARAM) {
-        if (compiler->is_64bit) {
-          orc_arm64_emit_load_reg (compiler, 64,
-	        compiler->vars[insn->src_args[0]].ptr_offset,
-              compiler->exec_reg,
-		ORC_STRUCT_OFFSET(OrcExecutor, params[insn->src_args[1]]));
-	  } else {
-          orc_arm_emit_load_reg (compiler,
-	        compiler->vars[insn->src_args[0]].ptr_offset,
-              compiler->exec_reg,
-		ORC_STRUCT_OFFSET(OrcExecutor, params[insn->src_args[1]]));
-	  }
-      } else {
-        if (!compiler->vars[insn->src_args[0]].ptr_offset)
-            continue;
-        if (compiler->is_64bit) {
-          if (!compiler->vars[insn->src_args[1]].value.i)
-              orc_arm64_emit_eor(compiler, 64,
-                  compiler->vars[insn->src_args[0]].ptr_offset,
-                  compiler->vars[insn->src_args[0]].ptr_offset,
-                  compiler->vars[insn->src_args[0]].ptr_offset);
-          else
-              orc_arm64_emit_load_imm(compiler, 64,
-                  compiler->vars[insn->src_args[0]].ptr_offset,
-                  compiler->vars[insn->src_args[1]].value.i);
-        } else {
-          if (!compiler->vars[insn->src_args[1]].value.i)
-              orc_arm_emit_eor_r(compiler, ORC_ARM_COND_AL, 0,
-                  compiler->vars[insn->src_args[0]].ptr_offset,
-                  compiler->vars[insn->src_args[0]].ptr_offset,
-                  compiler->vars[insn->src_args[0]].ptr_offset);
-          else
-              orc_arm_emit_load_imm(compiler,
-                  compiler->vars[insn->src_args[0]].ptr_offset,
-                  compiler->vars[insn->src_args[1]].value.i);
-        }
-      }
-    }
-  }
 }
 
 static void
