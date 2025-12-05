@@ -87,7 +87,15 @@ if 'altivec' in enabled_targets
 endif
 
 if 'neon' in enabled_targets
-  orc_sources += ['orcprogram-neon.c', 'orcrules-neon.c', 'orcarm.c', 'orcarminsn.c', 'orcarm64insn.c']
+  orc_sources += [
+    'orcprogram-neon.c',
+    'orcprogram-neon32.c',
+    'orcprogram-neon64.c',
+    'orcrules-neon.c',
+    'orcarm.c',
+    'orcarminsn.c',
+    'orcarm64insn.c',
+  ]
 endif
 
 # ARM target is disabled until it has decent coverage
