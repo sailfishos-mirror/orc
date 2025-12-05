@@ -39,9 +39,9 @@ static void orc_neon_compiler_init_common (OrcCompiler *compiler);
 static void orc_neon_compiler_init (OrcCompiler *compiler);
 static void orc_neon32_compiler_init (OrcCompiler *compiler);
 static void orc_neon64_compiler_init (OrcCompiler *compiler);
-static void orc_compiler_neon_assemble (OrcCompiler *compiler);
-static void orc_compiler_neon_assemble_32 (OrcCompiler *compiler);
-static void orc_compiler_neon_assemble_64 (OrcCompiler *compiler);
+static void orc_neon_compile (OrcCompiler *compiler);
+static void orc_neon32_compile (OrcCompiler *compiler);
+static void orc_neon64_compile (OrcCompiler *compiler);
 
 static void orc_neon64_short_unaligned_loop (OrcCompiler *compiler);
 
@@ -135,7 +135,7 @@ static OrcTarget neon_target = {
   ORC_VEC_REG_BASE,
   orc_compiler_neon_get_default_flags,
   orc_neon_compiler_init,
-  orc_compiler_neon_assemble,
+  orc_neon_compile,
   { { 0 } }, 0,
   NULL,
   NULL,
@@ -841,12 +841,12 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
 }
 
 static void
-orc_compiler_neon_assemble (OrcCompiler *compiler)
+orc_neon_compile (OrcCompiler *compiler)
 {
   if (compiler->is_64bit)
-    orc_compiler_neon_assemble_64 (compiler);
+    orc_neon64_compile (compiler);
   else
-    orc_compiler_neon_assemble_32 (compiler);
+    orc_neon32_compile (compiler);
 }
 
 static void
@@ -946,7 +946,7 @@ orc_neon64_emit_loop (OrcCompiler *compiler, int unroll_index)
 }
 
 static void
-orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
+orc_neon32_compile (OrcCompiler *compiler)
 {
   int align_var;
   int align_shift;
@@ -1205,7 +1205,7 @@ orc_compiler_neon_assemble_32 (OrcCompiler *compiler)
 }
 
 static void
-orc_compiler_neon_assemble_64 (OrcCompiler *compiler)
+orc_neon64_compile (OrcCompiler *compiler)
 {
   const enum RegionFlags region_flags = orc_compiler_neon_calc_regions (compiler);
   const orc_bool region1 = region_flags & FLAG_REGION1;
