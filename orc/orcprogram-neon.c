@@ -592,7 +592,7 @@ orc_neon_emit_store_dest (OrcCompiler *compiler, OrcVariable *var)
 #endif
 
 static int
-get_shift (int size)
+orc_neon_get_shift (int size)
 {
   switch (size) {
     case 1:
@@ -610,7 +610,7 @@ get_shift (int size)
 }
 
 static int
-get_align_var (OrcCompiler *compiler)
+orc_neon_get_align_var (OrcCompiler *compiler)
 {
   if (compiler->vars[ORC_VAR_D1].size) return ORC_VAR_D1;
   if (compiler->vars[ORC_VAR_S1].size) return ORC_VAR_S1;
@@ -650,9 +650,9 @@ orc_neon64_set_region_counters (OrcCompiler *compiler)
   int var_size_shift;
   int align_shift = 4;
 
-  align_var = get_align_var (compiler);
+  align_var = orc_neon_get_align_var (compiler);
   if (compiler->error) return;
-  var_size_shift = get_shift (compiler->vars[align_var].size);
+  var_size_shift = orc_neon_get_shift (compiler->vars[align_var].size);
 
   /** IP0 = 1 << align_shift */
   orc_arm64_emit_mov_imm (compiler, 32, ORC_ARM64_IP0, 1<<align_shift);
@@ -768,9 +768,9 @@ orc_neon64_loop_caches (OrcCompiler *compiler)
   int var_size_shift;
   int i;
 
-  align_var = get_align_var (compiler);
+  align_var = orc_neon_get_align_var (compiler);
   if (compiler->error) return;
-  var_size_shift = get_shift (compiler->vars[align_var].size);
+  var_size_shift = orc_neon_get_shift (compiler->vars[align_var].size);
 
   /** if IP0 == 0, go to LABEL_REGION2_SKIP */
   orc_arm64_emit_cmp_imm (compiler, 32, ORC_ARM64_IP0, 0);
@@ -954,10 +954,10 @@ orc_neon32_compile (OrcCompiler *compiler)
   int i;
   int set_fpscr = FALSE;
 
-  align_var = get_align_var (compiler);
+  align_var = orc_neon_get_align_var (compiler);
   if (compiler->error) return;
 
-  var_size_shift = get_shift (compiler->vars[align_var].size);
+  var_size_shift = orc_neon_get_shift (compiler->vars[align_var].size);
   align_shift = 4;
 
   compiler->vars[align_var].is_aligned = FALSE;
@@ -1214,7 +1214,7 @@ orc_neon64_compile (OrcCompiler *compiler)
   const orc_bool nunroll = region_flags & FLAG_NUNROLL;
   int align_var;
 
-  align_var = get_align_var (compiler);
+  align_var = orc_neon_get_align_var (compiler);
   if (compiler->error) return;
 
   ORC_DEBUG ("Neon compiler regions = [ %s %s %s %s ]"
