@@ -497,25 +497,15 @@ orc_neon_emit_unary_quad (OrcCompiler *p, const char *name, unsigned int code,
 static void
 orc_neon_emit_mov (OrcCompiler *compiler, OrcVariable dest, OrcVariable src)
 {
-  if (compiler->is_64bit) {
-      orc_neon64_emit_binary (compiler, "orr", 0x0ea01c00,
-          dest, src, src, compiler->insn_shift);
-  } else {
-      orc_neon_emit_binary (compiler, "vorr", 0xf2200110,
-          dest.alloc, src.alloc, src.alloc);
-  }
+  orc_neon_emit_binary (compiler, "vorr", 0xf2200110,
+      dest.alloc, src.alloc, src.alloc);
 }
 
 static void
 orc_neon_emit_mov_quad (OrcCompiler *compiler, OrcVariable dest, OrcVariable src)
 {
-  if (compiler->is_64bit) {
-      orc_neon64_emit_binary (compiler, "orr", 0x0ea01c00,
-          dest, src, src, compiler->insn_shift - 1);
-  } else {
-      orc_neon_emit_binary_quad (compiler, "vorr", 0xf2200110,
-          dest.alloc, src.alloc, src.alloc);
-  }
+  orc_neon_emit_binary_quad (compiler, "vorr", 0xf2200110,
+      dest.alloc, src.alloc, src.alloc);
 }
 
 void
