@@ -4720,16 +4720,7 @@ orc_neon_rule_div255w (OrcCompiler *p, void *user, OrcInstruction *insn)
       orc_neon64_emit_binary (p, "uzp2", 0x0e405800, dest_i64, tmp1_i64, tmp2_i64,
           p->insn_shift - 1);
     }
-    {
-      ORC_ASM_CODE (p, "  %s %s, %s, #%d\n", immshift_info[5].name64,
-          orc_neon64_reg_name_vector (dest.alloc, dest.size, 1),
-          orc_neon64_reg_name_vector (dest.alloc, dest.size, 1), 7);
-      int code = immshift_info[5].code64 | (1U << 30);
-      code |= (dest.alloc & 0x1f) << 0;
-      code |= (src.alloc & 0x1f) << 5;
-      code |= ((immshift_info[5].bits - 7U) << 16);
-      orc_arm_emit (p, code);
-    }
+    orc_neon_emit_shift (p, 5, &dest, &src, 7, 1);
   } else {
     // Multiply low
     orc_neon_emit_binary_long (p, "vmull.u16", 0xf3900c00, tmp1.alloc, src.alloc,
