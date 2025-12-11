@@ -22,6 +22,452 @@ static void orc_neon_emit_loadiw (OrcCompiler *compiler, OrcVariable *dest, int 
 static void orc_neon_emit_loadiq (OrcCompiler *compiler, OrcVariable *dest, long long param);
 static void orc_neon_emit_loadpq (OrcCompiler *compiler, int dest, int param);
 
+typedef struct _NeonInsn {
+  const char *name;
+  orc_uint32 code;
+  int vec_shift;
+} OrcNeonInsn;
+
+typedef struct _OrcNeonRule {
+  const char *orc_opcode;
+  void (*rule)(OrcCompiler *, void *, OrcInstruction *);
+} OrcNeonRule;
+
+enum OrcNeonOpcode {
+  ORC_NEON_OP_ABSB,
+  ORC_NEON_OP_ADDB,
+  ORC_NEON_OP_ADDSSB,
+  ORC_NEON_OP_ADDUSB,
+  ORC_NEON_OP_ANDB,
+/*ORC_NEON_OP_ANDNB,*/
+  ORC_NEON_OP_AVGSB,
+  ORC_NEON_OP_AVGUB,
+  ORC_NEON_OP_CMPEQB,
+  ORC_NEON_OP_CMPGTSB,
+  ORC_NEON_OP_COPYB,
+  ORC_NEON_OP_MAXSB,
+  ORC_NEON_OP_MAXUB,
+  ORC_NEON_OP_MINSB,
+  ORC_NEON_OP_MINUB,
+  ORC_NEON_OP_MULLB,
+  ORC_NEON_OP_ORB,
+/*ORC_NEON_OP_SHLB,*/
+/*ORC_NEON_OP_SHRSB,*/
+/*ORC_NEON_OP_SHRUB,*/
+  ORC_NEON_OP_SUBB,
+  ORC_NEON_OP_SUBSSB,
+  ORC_NEON_OP_SUBUSB,
+  ORC_NEON_OP_XORB,
+  ORC_NEON_OP_ABSW,
+  ORC_NEON_OP_ADDW,
+  ORC_NEON_OP_ADDSSW,
+  ORC_NEON_OP_ADDUSW,
+  ORC_NEON_OP_ANDW,
+/*ORC_NEON_OP_ANDNW,*/
+  ORC_NEON_OP_AVGSW,
+  ORC_NEON_OP_AVGUW,
+  ORC_NEON_OP_CMPEQW,
+  ORC_NEON_OP_CMPGTSW,
+  ORC_NEON_OP_COPYW,
+  ORC_NEON_OP_MAXSW,
+  ORC_NEON_OP_MAXUW,
+  ORC_NEON_OP_MINSW,
+  ORC_NEON_OP_MINUW,
+  ORC_NEON_OP_MULLW,
+  ORC_NEON_OP_ORW,
+/*ORC_NEON_OP_SHLW,*/
+/*ORC_NEON_OP_SHRSW,*/
+/*ORC_NEON_OP_SHRUW,*/
+  ORC_NEON_OP_SUBW,
+  ORC_NEON_OP_SUBSSW,
+  ORC_NEON_OP_SUBUSW,
+  ORC_NEON_OP_XORW,
+  ORC_NEON_OP_ABSL,
+  ORC_NEON_OP_ADDL,
+  ORC_NEON_OP_ADDSSL,
+  ORC_NEON_OP_ADDUSL,
+  ORC_NEON_OP_ANDL,
+/*ORC_NEON_OP_ANDNL,*/
+  ORC_NEON_OP_AVGSL,
+  ORC_NEON_OP_AVGUL,
+  ORC_NEON_OP_CMPEQL,
+  ORC_NEON_OP_CMPGTSL,
+  ORC_NEON_OP_COPYL,
+  ORC_NEON_OP_MAXSL,
+  ORC_NEON_OP_MAXUL,
+  ORC_NEON_OP_MINSL,
+  ORC_NEON_OP_MINUL,
+  ORC_NEON_OP_MULLL,
+  ORC_NEON_OP_ORL,
+/*ORC_NEON_OP_SHLL,*/
+/*ORC_NEON_OP_SHRSL,*/
+/*ORC_NEON_OP_SHRUL,*/
+  ORC_NEON_OP_SUBL,
+  ORC_NEON_OP_SUBSSL,
+  ORC_NEON_OP_SUBUSL,
+  ORC_NEON_OP_XORL,
+/*ORC_NEON_OP_ABSQ,*/
+  ORC_NEON_OP_ADDQ,
+/*ORC_NEON_OP_ADDSSQ,*/
+/*ORC_NEON_OP_ADDUSQ,*/
+  ORC_NEON_OP_ANDQ,
+/*ORC_NEON_OP_AVGSQ,*/
+/*ORC_NEON_OP_AVGUQ,*/
+/*ORC_NEON_OP_CMPEQQ,*/
+/*ORC_NEON_OP_CMPGTSQ,*/
+  ORC_NEON_OP_COPYQ,
+/*ORC_NEON_OP_MAXSQ,*/
+/*ORC_NEON_OP_MAXUQ,*/
+/*ORC_NEON_OP_MINSQ,*/
+/*ORC_NEON_OP_MINUQ,*/
+/*ORC_NEON_OP_MULLQ,*/
+  ORC_NEON_OP_ORQ,
+  ORC_NEON_OP_SUBQ,
+/*ORC_NEON_OP_SUBSSQ,*/
+/*ORC_NEON_OP_SUBUSQ,*/
+  ORC_NEON_OP_XORQ,
+  ORC_NEON_OP_CONVSBW,
+  ORC_NEON_OP_CONVUBW,
+  ORC_NEON_OP_CONVSWL,
+  ORC_NEON_OP_CONVUWL,
+  ORC_NEON_OP_CONVSLQ,
+  ORC_NEON_OP_CONVULQ,
+  ORC_NEON_OP_CONVWB,
+  ORC_NEON_OP_CONVSSSWB,
+  ORC_NEON_OP_CONVSUSWB,
+  ORC_NEON_OP_CONVUUSWB,
+  ORC_NEON_OP_CONVLW,
+  ORC_NEON_OP_CONVQL,
+  ORC_NEON_OP_CONVSSSLW,
+  ORC_NEON_OP_CONVSUSLW,
+  ORC_NEON_OP_CONVUUSLW,
+  ORC_NEON_OP_CONVSSSQL,
+  ORC_NEON_OP_CONVSUSQL,
+  ORC_NEON_OP_CONVUUSQL,
+  ORC_NEON_OP_MULSBW,
+  ORC_NEON_OP_MULUBW,
+  ORC_NEON_OP_MULSWL,
+  ORC_NEON_OP_MULUWL,
+  ORC_NEON_OP_SWAPW,
+  ORC_NEON_OP_SWAPL,
+  ORC_NEON_OP_SWAPQ,
+  ORC_NEON_OP_SWAPWL,
+  ORC_NEON_OP_SWAPLQ,
+  ORC_NEON_OP_SELECT0QL,
+  ORC_NEON_OP_SELECT0LW,
+  ORC_NEON_OP_SELECT0WB,
+  ORC_NEON_OP_ADDF,
+  ORC_NEON_OP_SUBF,
+  ORC_NEON_OP_MULF,
+  ORC_NEON_OP_MAXF,
+  ORC_NEON_OP_MINF,
+  ORC_NEON_OP_CMPEQF,
+/*ORC_NEON_OP_CMPLTF,*/
+/*ORC_NEON_OP_CMPLEF,*/
+  ORC_NEON_OP_CONVFL,
+  ORC_NEON_OP_CONVLF,
+  ORC_NEON_OP_ADDD,
+  ORC_NEON_OP_SUBD,
+  ORC_NEON_OP_MULD,
+  ORC_NEON_OP_DIVD,
+  ORC_NEON_OP_DIVF,
+  ORC_NEON_OP_SQRTD,
+  ORC_NEON_OP_SQRTF,
+/*ORC_NEON_OP_CMPEQD,*/
+  ORC_NEON_OP_CONVDF,
+  ORC_NEON_OP_CONVFD,
+};
+
+static const OrcNeonInsn orc_neon32_insns[] = {
+  [ORC_NEON_OP_ABSB]      = { "vabs.s8"     ,0xf3b10300, 3 },
+  [ORC_NEON_OP_ADDB]      = { "vadd.i8"     ,0xf2000800, 3 },
+  [ORC_NEON_OP_ADDSSB]    = { "vqadd.s8"    ,0xf2000010, 3 },
+  [ORC_NEON_OP_ADDUSB]    = { "vqadd.u8"    ,0xf3000010, 3 },
+  [ORC_NEON_OP_ANDB]      = { "vand"        ,0xf2000110, 3 },
+/*[ORC_NEON_OP_ANDNB]     = { "vbic"        ,0xf2100110, 3 },*/
+  [ORC_NEON_OP_AVGSB]     = { "vrhadd.s8"   ,0xf2000100, 3 },
+  [ORC_NEON_OP_AVGUB]     = { "vrhadd.u8"   ,0xf3000100, 3 },
+  [ORC_NEON_OP_CMPEQB]    = { "vceq.i8"     ,0xf3000810, 3 },
+  [ORC_NEON_OP_CMPGTSB]   = { "vcgt.s8"     ,0xf2000300, 3 },
+  [ORC_NEON_OP_COPYB]     = { "vmov"        ,0xf2200110, 3 },
+  [ORC_NEON_OP_MAXSB]     = { "vmax.s8"     ,0xf2000600, 3 },
+  [ORC_NEON_OP_MAXUB]     = { "vmax.u8"     ,0xf3000600, 3 },
+  [ORC_NEON_OP_MINSB]     = { "vmin.s8"     ,0xf2000610, 3 },
+  [ORC_NEON_OP_MINUB]     = { "vmin.u8"     ,0xf3000610, 3 },
+  [ORC_NEON_OP_MULLB]     = { "vmul.i8"     ,0xf2000910, 3 },
+  [ORC_NEON_OP_ORB]       = { "vorr"        ,0xf2200110, 3 },
+/*[ORC_NEON_OP_SHLB]      = { "vshl.i8"     ,0xf2880510, 3 },*/
+/*[ORC_NEON_OP_SHRSB]     = { "vshr.s8"     ,0xf2880010, 3 },*/
+/*[ORC_NEON_OP_SHRUB]     = { "vshr.u8"     ,0xf3880010, 3 },*/
+  [ORC_NEON_OP_SUBB]      = { "vsub.i8"     ,0xf3000800, 3 },
+  [ORC_NEON_OP_SUBSSB]    = { "vqsub.s8"    ,0xf2000210, 3 },
+  [ORC_NEON_OP_SUBUSB]    = { "vqsub.u8"    ,0xf3000210, 3 },
+  [ORC_NEON_OP_XORB]      = { "veor"        ,0xf3000110, 3 },
+  [ORC_NEON_OP_ABSW]      = { "vabs.s16"    ,0xf3b50300, 2 },
+  [ORC_NEON_OP_ADDW]      = { "vadd.i16"    ,0xf2100800, 2 },
+  [ORC_NEON_OP_ADDSSW]    = { "vqadd.s16"   ,0xf2100010, 2 },
+  [ORC_NEON_OP_ADDUSW]    = { "vqadd.u16"   ,0xf3100010, 2 },
+  [ORC_NEON_OP_ANDW]      = { "vand"        ,0xf2000110, 2 },
+/*[ORC_NEON_OP_ANDNW]     = { "vbic"        ,0xf2100110, 2 },*/
+  [ORC_NEON_OP_AVGSW]     = { "vrhadd.s16"  ,0xf2100100, 2 },
+  [ORC_NEON_OP_AVGUW]     = { "vrhadd.u16"  ,0xf3100100, 2 },
+  [ORC_NEON_OP_CMPEQW]    = { "vceq.i16"    ,0xf3100810, 2 },
+  [ORC_NEON_OP_CMPGTSW]   = { "vcgt.s16"    ,0xf2100300, 2 },
+  [ORC_NEON_OP_COPYW]     = { "vmov"        ,0xf2200110, 2 },
+  [ORC_NEON_OP_MAXSW]     = { "vmax.s16"    ,0xf2100600, 2 },
+  [ORC_NEON_OP_MAXUW]     = { "vmax.u16"    ,0xf3100600, 2 },
+  [ORC_NEON_OP_MINSW]     = { "vmin.s16"    ,0xf2100610, 2 },
+  [ORC_NEON_OP_MINUW]     = { "vmin.u16"    ,0xf3100610, 2 },
+  [ORC_NEON_OP_MULLW]     = { "vmul.i16"    ,0xf2100910, 2 },
+  [ORC_NEON_OP_ORW]       = { "vorr"        ,0xf2200110, 2 },
+/*[ORC_NEON_OP_SHLW]      = { "vshl.i16"    ,0xf2900510, 2 },*/
+/*[ORC_NEON_OP_SHRSW]     = { "vshr.s16"    ,0xf2900010, 2 },*/
+/*[ORC_NEON_OP_SHRUW]     = { "vshr.u16"    ,0xf3900010, 2 },*/
+  [ORC_NEON_OP_SUBW]      = { "vsub.i16"    ,0xf3100800, 2 },
+  [ORC_NEON_OP_SUBSSW]    = { "vqsub.s16"   ,0xf2100210, 2 },
+  [ORC_NEON_OP_SUBUSW]    = { "vqsub.u16"   ,0xf3100210, 2 },
+  [ORC_NEON_OP_XORW]      = { "veor"        ,0xf3000110, 2 },
+  [ORC_NEON_OP_ABSL]      = { "vabs.s32"    ,0xf3b90300, 1 },
+  [ORC_NEON_OP_ADDL]      = { "vadd.i32"    ,0xf2200800, 1 },
+  [ORC_NEON_OP_ADDSSL]    = { "vqadd.s32"   ,0xf2200010, 1 },
+  [ORC_NEON_OP_ADDUSL]    = { "vqadd.u32"   ,0xf3200010, 1 },
+  [ORC_NEON_OP_ANDL]      = { "vand"        ,0xf2000110, 1 },
+/*[ORC_NEON_OP_ANDNL]     = { "vbic"        ,0xf2100110, 1 },*/
+  [ORC_NEON_OP_AVGSL]     = { "vrhadd.s32"  ,0xf2200100, 1 },
+  [ORC_NEON_OP_AVGUL]     = { "vrhadd.u32"  ,0xf3200100, 1 },
+  [ORC_NEON_OP_CMPEQL]    = { "vceq.i32"    ,0xf3200810, 1 },
+  [ORC_NEON_OP_CMPGTSL]   = { "vcgt.s32"    ,0xf2200300, 1 },
+  [ORC_NEON_OP_COPYL]     = { "vmov"        ,0xf2200110, 1 },
+  [ORC_NEON_OP_MAXSL]     = { "vmax.s32"    ,0xf2200600, 1 },
+  [ORC_NEON_OP_MAXUL]     = { "vmax.u32"    ,0xf3200600, 1 },
+  [ORC_NEON_OP_MINSL]     = { "vmin.s32"    ,0xf2200610, 1 },
+  [ORC_NEON_OP_MINUL]     = { "vmin.u32"    ,0xf3200610, 1 },
+  [ORC_NEON_OP_MULLL]     = { "vmul.i32"    ,0xf2200910, 1 },
+  [ORC_NEON_OP_ORL]       = { "vorr"        ,0xf2200110, 1 },
+/*[ORC_NEON_OP_SHLL]      = { "vshl.i32"    ,0xf2a00510, 1 },*/
+/*[ORC_NEON_OP_SHRSL]     = { "vshr.s32"    ,0xf2a00010, 1 },*/
+/*[ORC_NEON_OP_SHRUL]     = { "vshr.u32"    ,0xf3a00010, 1 },*/
+  [ORC_NEON_OP_SUBL]      = { "vsub.i32"    ,0xf3200800, 1 },
+  [ORC_NEON_OP_SUBSSL]    = { "vqsub.s32"   ,0xf2200210, 1 },
+  [ORC_NEON_OP_SUBUSL]    = { "vqsub.u32"   ,0xf3200210, 1 },
+  [ORC_NEON_OP_XORL]      = { "veor"        ,0xf3000110, 1 },
+/*[ORC_NEON_OP_ABSQ]      = { "vabs.s64"    ,0xf3b10300, 0 },*/
+  [ORC_NEON_OP_ADDQ]      = { "vadd.i64"    ,0xf2300800, 0 },
+/*[ORC_NEON_OP_ADDSSQ]    = { "vqadd.s64"   ,0xf2000010, 0 },*/
+/*[ORC_NEON_OP_ADDUSQ]    = { "vqadd.u64"   ,0xf3000010, 0 },*/
+  [ORC_NEON_OP_ANDQ]      = { "vand"        ,0xf2000110, 0 },
+/*[ORC_NEON_OP_AVGSQ]     = { "vrhadd.s64"  ,0xf2000100, 0 },*/
+/*[ORC_NEON_OP_AVGUQ]     = { "vrhadd.u64"  ,0xf3000100, 0 },*/
+/*[ORC_NEON_OP_CMPEQQ]    = { "vceq.i64"    ,0xf3000810, 0 },*/
+/*[ORC_NEON_OP_CMPGTSQ]   = { "vcgt.s64"    ,0xf2000300, 0 },*/
+  [ORC_NEON_OP_COPYQ]     = { "vmov"        ,0xf2200110, 0 },
+/*[ORC_NEON_OP_MAXSQ]     = { "vmax.s64"    ,0xf2000600, 0 },*/
+/*[ORC_NEON_OP_MAXUQ]     = { "vmax.u64"    ,0xf3000600, 0 },*/
+/*[ORC_NEON_OP_MINSQ]     = { "vmin.s64"    ,0xf2000610, 0 },*/
+/*[ORC_NEON_OP_MINUQ]     = { "vmin.u64"    ,0xf3000610, 0 },*/
+/*[ORC_NEON_OP_MULLQ]     = { "vmul.i64"    ,0xf2000910, 0 },*/
+  [ORC_NEON_OP_ORQ]       = { "vorr"        ,0xf2200110, 0 },
+  [ORC_NEON_OP_SUBQ]      = { "vsub.i64"    ,0xf3300800, 0 },
+/*[ORC_NEON_OP_SUBSSQ]    = { "vqsub.s64"   ,0xf2000210, 0 },*/
+/*[ORC_NEON_OP_SUBUSQ]    = { "vqsub.u64"   ,0xf3000210, 0 },*/
+  [ORC_NEON_OP_XORQ]      = { "veor"        ,0xf3000110, 0 },
+  [ORC_NEON_OP_CONVSBW]   = { "vmovl.s8"    ,0xf2880a10, 3 },
+  [ORC_NEON_OP_CONVUBW]   = { "vmovl.u8"    ,0xf3880a10, 3 },
+  [ORC_NEON_OP_CONVSWL]   = { "vmovl.s16"   ,0xf2900a10, 2 },
+  [ORC_NEON_OP_CONVUWL]   = { "vmovl.u16"   ,0xf3900a10, 2 },
+  [ORC_NEON_OP_CONVSLQ]   = { "vmovl.s32"   ,0xf2a00a10, 1 },
+  [ORC_NEON_OP_CONVULQ]   = { "vmovl.u32"   ,0xf3a00a10, 1 },
+  [ORC_NEON_OP_CONVWB]    = { "vmovn.i16"   ,0xf3b20200, 3 },
+  [ORC_NEON_OP_CONVSSSWB] = { "vqmovn.s16"  ,0xf3b20280, 3 },
+  [ORC_NEON_OP_CONVSUSWB] = { "vqmovun.s16" ,0xf3b20240, 3 },
+  [ORC_NEON_OP_CONVUUSWB] = { "vqmovn.u16"  ,0xf3b202c0, 3 },
+  [ORC_NEON_OP_CONVLW]    = { "vmovn.i32"   ,0xf3b60200, 2 },
+  [ORC_NEON_OP_CONVQL]    = { "vmovn.i64"   ,0xf3ba0200, 1 },
+  [ORC_NEON_OP_CONVSSSLW] = { "vqmovn.s32"  ,0xf3b60280, 2 },
+  [ORC_NEON_OP_CONVSUSLW] = { "vqmovun.s32" ,0xf3b60240, 2 },
+  [ORC_NEON_OP_CONVUUSLW] = { "vqmovn.u32"  ,0xf3b602c0, 2 },
+  [ORC_NEON_OP_CONVSSSQL] = { "vqmovn.s64"  ,0xf3ba0280, 1 },
+  [ORC_NEON_OP_CONVSUSQL] = { "vqmovun.s64" ,0xf3ba0240, 1 },
+  [ORC_NEON_OP_CONVUUSQL] = { "vqmovn.u64"  ,0xf3ba02c0, 1 },
+  [ORC_NEON_OP_MULSBW]    = { "vmull.s8"    ,0xf2800c00, 3 },
+  [ORC_NEON_OP_MULUBW]    = { "vmull.u8"    ,0xf3800c00, 3 },
+  [ORC_NEON_OP_MULSWL]    = { "vmull.s16"   ,0xf2900c00, 2 },
+  [ORC_NEON_OP_MULUWL]    = { "vmull.u16"   ,0xf3900c00, 2 },
+  [ORC_NEON_OP_SWAPW]     = { "vrev16.i8"   ,0xf3b00100, 2 },
+  [ORC_NEON_OP_SWAPL]     = { "vrev32.i8"   ,0xf3b00080, 1 },
+  [ORC_NEON_OP_SWAPQ]     = { "vrev64.i8"   ,0xf3b00000, 0 },
+  [ORC_NEON_OP_SWAPWL]    = { "vrev32.i16"  ,0xf3b40080, 1 },
+  [ORC_NEON_OP_SWAPLQ]    = { "vrev64.i32"  ,0xf3b80000, 0 },
+  [ORC_NEON_OP_SELECT0QL] = { "vmovn.i64"   ,0xf3ba0200, 1 },
+  [ORC_NEON_OP_SELECT0LW] = { "vmovn.i32"   ,0xf3b60200, 2 },
+  [ORC_NEON_OP_SELECT0WB] = { "vmovn.i16"   ,0xf3b20200, 3 },
+  [ORC_NEON_OP_ADDF]      = { "vadd.f32"    ,0xf2000d00, 1 },
+  [ORC_NEON_OP_SUBF]      = { "vsub.f32"    ,0xf2200d00, 1 },
+  [ORC_NEON_OP_MULF]      = { "vmul.f32"    ,0xf3000d10, 1 },
+  [ORC_NEON_OP_MAXF]      = { "vmax.f32"    ,0xf2000f00, 1 },
+  [ORC_NEON_OP_MINF]      = { "vmin.f32"    ,0xf2200f00, 1 },
+  [ORC_NEON_OP_CMPEQF]    = { "vceq.f32"    ,0xf2000e00, 1 },
+/*[ORC_NEON_OP_CMPLTF]    = { "vclt.f32"    ,0xf3200e00, 1 },*/
+/*[ORC_NEON_OP_CMPLEF]    = { "vcle.f32"    ,0xf3000e00, 1 },*/
+  [ORC_NEON_OP_CONVFL]    = { "vcvt.s32.f32",0xf3bb0700, 1 },
+  [ORC_NEON_OP_CONVLF]    = { "vcvt.f32.s32",0xf3bb0600, 1 },
+  [ORC_NEON_OP_ADDD]      = { "vadd.f64"    ,0xee300b00, 0 },
+  [ORC_NEON_OP_SUBD]      = { "vsub.f64"    ,0xee300b40, 0 },
+  [ORC_NEON_OP_MULD]      = { "vmul.f64"    ,0xee200b00, 0 },
+  [ORC_NEON_OP_DIVD]      = { "vdiv.f64"    ,0xee800b00, 0 },
+  [ORC_NEON_OP_DIVF]      = { "vdiv.f32"    ,0xee800a00, 0 },
+  [ORC_NEON_OP_SQRTD]     = { "vsqrt.f64"   ,0xeeb10b00, 0 },
+  [ORC_NEON_OP_SQRTF]     = { "vsqrt.f32"   ,0xeeb10ac0, 0 },
+/*[ORC_NEON_OP_CMPEQD]    = { "vcmpe.f64"   ,0xee000000, 0 },*/
+  [ORC_NEON_OP_CONVDF]    = { "vcvt.f64.f32",0xee200b00, 0 },
+  [ORC_NEON_OP_CONVFD]    = { "vcvt.f32.f64",0xee200b00, 0 },
+};
+
+static const OrcNeonInsn orc_neon64_insns[] = {
+  [ORC_NEON_OP_ABSB]      = { "abs"   ,0x0e20b800, 3 },
+  [ORC_NEON_OP_ADDB]      = { "add"   ,0x0e208400, 3 },
+  [ORC_NEON_OP_ADDSSB]    = { "sqadd" ,0x0e200c00, 3 },
+  [ORC_NEON_OP_ADDUSB]    = { "uqadd" ,0x2e200c00, 3 },
+  [ORC_NEON_OP_ANDB]      = { "and"   ,0x0e201c00, 3 },
+/*[ORC_NEON_OP_ANDNB]     = { NULL    ,0         , 3 },*/
+  [ORC_NEON_OP_AVGSB]     = { "srhadd",0x0e201400, 3 },
+  [ORC_NEON_OP_AVGUB]     = { "urhadd",0x2e201400, 3 },
+  [ORC_NEON_OP_CMPEQB]    = { "cmeq"  ,0x2e208c00, 3 },
+  [ORC_NEON_OP_CMPGTSB]   = { "cmgt"  ,0x0e203400, 3 },
+  [ORC_NEON_OP_COPYB]     = { "mov"   ,0x0ea01c00, 3 },
+  [ORC_NEON_OP_MAXSB]     = { "smax"  ,0x0e206400, 3 },
+  [ORC_NEON_OP_MAXUB]     = { "umax"  ,0x2e206400, 3 },
+  [ORC_NEON_OP_MINSB]     = { "smin"  ,0x0e206c00, 3 },
+  [ORC_NEON_OP_MINUB]     = { "umin"  ,0x2e206c00, 3 },
+  [ORC_NEON_OP_MULLB]     = { "mul"   ,0x0e209c00, 3 },
+  [ORC_NEON_OP_ORB]       = { "orr"   ,0x0ea01c00, 3 },
+/*[ORC_NEON_OP_SHLB]      = { NULL    ,0         , 3 },*/
+/*[ORC_NEON_OP_SHRSB]     = { 8       ,NULL      , 3 },*/
+/*[ORC_NEON_OP_SHRUB]     = { 8       ,NULL      , 3 },*/
+  [ORC_NEON_OP_SUBB]      = { "sub"   ,0x2e208400, 3 },
+  [ORC_NEON_OP_SUBSSB]    = { "sqsub" ,0x0e202c00, 3 },
+  [ORC_NEON_OP_SUBUSB]    = { "uqsub" ,0x2e202c00, 3 },
+  [ORC_NEON_OP_XORB]      = { "eor"   ,0x2e201c00, 3 },
+  [ORC_NEON_OP_ABSW]      = { "abs"   ,0x0e60b800, 2 },
+  [ORC_NEON_OP_ADDW]      = { "add"   ,0x0e608400, 2 },
+  [ORC_NEON_OP_ADDSSW]    = { "sqadd" ,0x0e600c00, 2 },
+  [ORC_NEON_OP_ADDUSW]    = { "uqadd" ,0x2e600c00, 2 },
+  [ORC_NEON_OP_ANDW]      = { "and"   ,0x0e201c00, 2 },
+/*[ORC_NEON_OP_ANDNW]     = { NULL    ,0         , 2 },*/
+  [ORC_NEON_OP_AVGSW]     = { "srhadd",0x0e601400, 2 },
+  [ORC_NEON_OP_AVGUW]     = { "urhadd",0x2e601400, 2 },
+  [ORC_NEON_OP_CMPEQW]    = { "cmeq"  ,0x2e608c00, 2 },
+  [ORC_NEON_OP_CMPGTSW]   = { "cmgt"  ,0x0e603400, 2 },
+  [ORC_NEON_OP_COPYW]     = { "mov"   ,0x0ea01c00, 2 },
+  [ORC_NEON_OP_MAXSW]     = { "smax"  ,0x0e606400, 2 },
+  [ORC_NEON_OP_MAXUW]     = { "umax"  ,0x2e606400, 2 },
+  [ORC_NEON_OP_MINSW]     = { "smin"  ,0x0e606c00, 2 },
+  [ORC_NEON_OP_MINUW]     = { "umin"  ,0x2e606c00, 2 },
+  [ORC_NEON_OP_MULLW]     = { "mul"   ,0x0e609c00, 2 },
+  [ORC_NEON_OP_ORW]       = { "orr"   ,0x0ea01c00, 2 },
+/*[ORC_NEON_OP_SHLW]      = { NULL    ,0         , 2 },*/
+/*[ORC_NEON_OP_SHRSW]     = { 16      ,NULL      , 2 },*/
+/*[ORC_NEON_OP_SHRUW]     = { 16      ,NULL      , 2 },*/
+  [ORC_NEON_OP_SUBW]      = { "sub"   ,0x2e608400, 2 },
+  [ORC_NEON_OP_SUBSSW]    = { "sqsub" ,0x0e602c00, 2 },
+  [ORC_NEON_OP_SUBUSW]    = { "uqsub" ,0x2e602c00, 2 },
+  [ORC_NEON_OP_XORW]      = { "eor"   ,0x2e201c00, 2 },
+  [ORC_NEON_OP_ABSL]      = { "abs"   ,0x0ea0b800, 1 },
+  [ORC_NEON_OP_ADDL]      = { "add"   ,0x0ea08400, 1 },
+  [ORC_NEON_OP_ADDSSL]    = { "sqadd" ,0x0ea00c00, 1 },
+  [ORC_NEON_OP_ADDUSL]    = { "uqadd" ,0x2ea00c00, 1 },
+  [ORC_NEON_OP_ANDL]      = { "and"   ,0x0e201c00, 1 },
+/*[ORC_NEON_OP_ANDNL]     = { NULL    ,0         , 1 },*/
+  [ORC_NEON_OP_AVGSL]     = { "srhadd",0x0ea01400, 1 },
+  [ORC_NEON_OP_AVGUL]     = { "urhadd",0x2ea01400, 1 },
+  [ORC_NEON_OP_CMPEQL]    = { "cmeq"  ,0x2ea08c00, 1 },
+  [ORC_NEON_OP_CMPGTSL]   = { "cmgt"  ,0x0ea03400, 1 },
+  [ORC_NEON_OP_COPYL]     = { "mov"   ,0x0ea01c00, 1 },
+  [ORC_NEON_OP_MAXSL]     = { "smax"  ,0x0ea06400, 1 },
+  [ORC_NEON_OP_MAXUL]     = { "umax"  ,0x2ea06400, 1 },
+  [ORC_NEON_OP_MINSL]     = { "smin"  ,0x0ea06c00, 1 },
+  [ORC_NEON_OP_MINUL]     = { "umin"  ,0x2ea06c00, 1 },
+  [ORC_NEON_OP_MULLL]     = { "mul"   ,0x0ea09c00, 1 },
+  [ORC_NEON_OP_ORL]       = { "orr"   ,0x0ea01c00, 1 },
+/*[ORC_NEON_OP_SHLL]      = { NULL    ,0         , 1 },*/
+/*[ORC_NEON_OP_SHRSL]     = { 32      ,NULL      , 1 },*/
+/*[ORC_NEON_OP_SHRUL]     = { 32      ,NULL      , 1 },*/
+  [ORC_NEON_OP_SUBL]      = { "sub"   ,0x2ea08400, 1 },
+  [ORC_NEON_OP_SUBSSL]    = { "sqsub" ,0x0ea02c00, 1 },
+  [ORC_NEON_OP_SUBUSL]    = { "uqsub" ,0x2ea02c00, 1 },
+  [ORC_NEON_OP_XORL]      = { "eor"   ,0x2e201c00, 1 },
+/*[ORC_NEON_OP_ABSQ]      = { "abs"   ,0xee0b800 , 0 },*/
+  [ORC_NEON_OP_ADDQ]      = { "add"   ,0x4ee08400, 0 },
+/*[ORC_NEON_OP_ADDSSQ]    = { "sqadd" ,0x0ee00c00, 0 },*/
+/*[ORC_NEON_OP_ADDUSQ]    = { "uqadd" ,0x2ee00c00, 0 },*/
+  [ORC_NEON_OP_ANDQ]      = { "and"   ,0x0e201c00, 0 },
+/*[ORC_NEON_OP_AVGSQ]     = { "srhadd",0x0ee01400, 0 },*/
+/*[ORC_NEON_OP_AVGUQ]     = { "urhadd",0x2ee01400, 0 },*/
+/*[ORC_NEON_OP_CMPEQQ]    = { "cmeq"  ,0x2ee08c00, 0 },*/
+/*[ORC_NEON_OP_CMPGTSQ]   = { "cmgt"  ,0x0ee03400, 0 },*/
+  [ORC_NEON_OP_COPYQ]     = { "mov"   ,0x0ea01c00, 0 },
+/*[ORC_NEON_OP_MAXSQ]     = { "smax"  ,0x0ee06400, 0 },*/
+/*[ORC_NEON_OP_MAXUQ]     = { "umax"  ,0x2ee06400, 0 },*/
+/*[ORC_NEON_OP_MINSQ]     = { "smin"  ,0x0ee06c00, 0 },*/
+/*[ORC_NEON_OP_MINUQ]     = { "umin"  ,0x2ee06c00, 0 },*/
+/*[ORC_NEON_OP_MULLQ]     = { "mul"   ,0x0ee09c00, 0 },*/
+  [ORC_NEON_OP_ORQ]       = { "orr"   ,0x0ea01c00, 0 },
+  [ORC_NEON_OP_SUBQ]      = { "sub"   ,0x6ee08400, 0 },
+/*[ORC_NEON_OP_SUBSSQ]    = { "sqsub" ,0x0ee00c00, 0 },*/
+/*[ORC_NEON_OP_SUBUSQ]    = { "uqsub" ,0x2ee00c00, 0 },*/
+  [ORC_NEON_OP_XORQ]      = { "eor"   ,0x2e201c00, 0 },
+  [ORC_NEON_OP_CONVSBW]   = { "sshll" ,0x0f08a400, 3 },
+  [ORC_NEON_OP_CONVUBW]   = { "ushll" ,0x2f08a400, 3 },
+  [ORC_NEON_OP_CONVSWL]   = { "sshll" ,0x0f10a400, 2 },
+  [ORC_NEON_OP_CONVUWL]   = { "ushll" ,0x2f10a400, 2 },
+  [ORC_NEON_OP_CONVSLQ]   = { "sshll" ,0x0f20a400, 1 },
+  [ORC_NEON_OP_CONVULQ]   = { "ushll" ,0x2f20a400, 1 },
+  [ORC_NEON_OP_CONVWB]    = { "xtn"   ,0x0e212800, 3 },
+  [ORC_NEON_OP_CONVSSSWB] = { "sqxtn" ,0x0e214800, 3 },
+  [ORC_NEON_OP_CONVSUSWB] = { "sqxtun",0x2e212800, 3 },
+  [ORC_NEON_OP_CONVUUSWB] = { "uqxtn" ,0x2e214800, 3 },
+  [ORC_NEON_OP_CONVLW]    = { "xtn"   ,0x0e612800, 2 },
+  [ORC_NEON_OP_CONVQL]    = { "xtn"   ,0x0ea12800, 1 },
+  [ORC_NEON_OP_CONVSSSLW] = { "sqxtn" ,0x0e614800, 2 },
+  [ORC_NEON_OP_CONVSUSLW] = { "sqxtun",0x2e612800, 2 },
+  [ORC_NEON_OP_CONVUUSLW] = { "uqxtn" ,0x2e614800, 2 },
+  [ORC_NEON_OP_CONVSSSQL] = { "sqxtn" ,0x0ea14800, 1 },
+  [ORC_NEON_OP_CONVSUSQL] = { "sqxtun",0x2ea12800, 1 },
+  [ORC_NEON_OP_CONVUUSQL] = { "uqxtn" ,0x2ea14800, 1 },
+  [ORC_NEON_OP_MULSBW]    = { "smull" ,0x0e20c000, 3 },
+  [ORC_NEON_OP_MULUBW]    = { "umull" ,0x2e20c000, 3 },
+  [ORC_NEON_OP_MULSWL]    = { "smull" ,0x0e60c000, 2 },
+  [ORC_NEON_OP_MULUWL]    = { "umull" ,0x2e60c000, 2 },
+  [ORC_NEON_OP_SWAPW]     = { "rev16" ,0x0e201800, 2 },
+  [ORC_NEON_OP_SWAPL]     = { "rev32" ,0x2e200800, 1 },
+  [ORC_NEON_OP_SWAPQ]     = { "rev64" ,0x0e200800, 0 },
+  [ORC_NEON_OP_SWAPWL]    = { "rev32" ,0x2e600800, 1 },
+  [ORC_NEON_OP_SWAPLQ]    = { "rev64" ,0x0ea00800, 0 },
+  [ORC_NEON_OP_SELECT0QL] = { "xtn"   ,0x0ea12800, 1 },
+  [ORC_NEON_OP_SELECT0LW] = { "xtn"   ,0x0e612800, 2 },
+  [ORC_NEON_OP_SELECT0WB] = { "xtn"   ,0x0e212800, 3 },
+  [ORC_NEON_OP_ADDF]      = { "fadd"  ,0x0e20d400, 1 },
+  [ORC_NEON_OP_SUBF]      = { "fsub"  ,0x0ea0d400, 1 },
+  [ORC_NEON_OP_MULF]      = { "fmul"  ,0x2e20dc00, 1 },
+  [ORC_NEON_OP_MAXF]      = { "fmax"  ,0x0e20f400, 1 },
+  [ORC_NEON_OP_MINF]      = { "fmin"  ,0x0ea0f400, 1 },
+  [ORC_NEON_OP_CMPEQF]    = { "fcmeq" ,0x5e20e400, 1 },
+/*[ORC_NEON_OP_CMPLTF]    = { "fcmlt" ,0x5ef8e800, 1 },*/
+/*[ORC_NEON_OP_CMPLEF]    = { "fcmle" ,0x7ef8d800, 1 },*/
+  [ORC_NEON_OP_CONVFL]    = { "fcvtzs",0x0ea1b800, 1 },
+  [ORC_NEON_OP_CONVLF]    = { "scvtf" ,0x0e21d800, 1 },
+  [ORC_NEON_OP_ADDD]      = { "fadd"  ,0x4e60d400, 0 },
+  [ORC_NEON_OP_SUBD]      = { "fsub"  ,0x4ee0d400, 0 },
+  [ORC_NEON_OP_MULD]      = { "fmul"  ,0x6e60dc00, 0 },
+  [ORC_NEON_OP_DIVD]      = { "fdiv"  ,0x6e60fc00, 0 },
+  [ORC_NEON_OP_DIVF]      = { "fdiv"  ,0x6e20fc00, 0 },
+  [ORC_NEON_OP_SQRTD]     = { "fsqrt" ,0x6ee1f800, -1 }, // FIXME?: is this vec_shift right?
+  [ORC_NEON_OP_SQRTF]     = { "fsqrt" ,0x6ea1f800, 0 },
+/*[ORC_NEON_OP_CMPEQD]    = { NULL    ,0         , 0 },*/
+  [ORC_NEON_OP_CONVDF]    = { "fcvtzs",0x4ee1b800, -1 }, // FIXME?: is this vec_shift right?
+  [ORC_NEON_OP_CONVFD]    = { "scvtf" ,0x4e61d800, -1 }, // FIXME?: is this vec_shift right?
+};
+
 const char *orc_neon_reg_name (int reg)
 {
   static const char *vec_regs[] = {
@@ -1043,6 +1489,282 @@ orc_neon_storeq (OrcCompiler *compiler, int dest, int update, int src1, int is_a
   orc_arm_emit (compiler, code);
 }
 #endif
+
+static void
+orc_neon64_unary_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  OrcVariable dest = p->vars[insn->dest_args[0]];
+  OrcVariable src1 = p->vars[insn->src_args[0]];
+  orc_neon64_emit_unary (p, i->name, i->code, dest, src1, i->vec_shift);
+}
+
+static void
+orc_neon64_binary_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  OrcVariable dest = p->vars[insn->dest_args[0]];
+  OrcVariable src1 = p->vars[insn->src_args[0]];
+  OrcVariable src2 = p->vars[insn->src_args[1]];
+  orc_neon64_emit_binary (p, i->name, i->code, dest, src1, src2, i->vec_shift);
+}
+
+static void
+orc_neon64_move_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  OrcVariable dest = p->vars[insn->dest_args[0]];
+  OrcVariable src1 = p->vars[insn->src_args[0]];
+
+  if (dest.alloc == src1.alloc)
+    return;
+
+  orc_neon64_emit_binary (p, i->name, i->code, dest, src1, src1, i->vec_shift);
+}
+
+static void
+orc_neon32_unary_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  if (p->insn_shift > i->vec_shift + 1) {
+    ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  int is_quad = p->insn_shift == (i->vec_shift + 1);
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+
+  if (is_quad)
+    orc_neon_emit_unary_quad (p, i->name, i->code, dest, src1);
+  else
+    orc_neon_emit_unary (p, i->name, i->code, dest, src1);
+}
+
+static void
+orc_neon32_unary_long_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  if (p->insn_shift > i->vec_shift) {
+    ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+  orc_neon_emit_unary_long (p, i->name, i->code, dest, src1);
+}
+
+static void
+orc_neon32_unary_narrow_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  if (p->insn_shift > i->vec_shift) {
+    ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+  orc_neon_emit_unary_narrow (p, i->name, i->code, dest, src1);
+}
+
+static void
+orc_neon32_binary_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  if (p->insn_shift > i->vec_shift + 1) {
+    ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  int is_quad = p->insn_shift == (i->vec_shift + 1);
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+  int src2 = p->vars[insn->src_args[1]].alloc;
+
+  if (is_quad)
+    orc_neon_emit_binary_quad (p, i->name, i->code, dest, src1, src2);
+  else
+    orc_neon_emit_binary (p, i->name, i->code, dest, src1, src2);
+}
+
+static void
+orc_neon32_binary_long_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  if (p->insn_shift > i->vec_shift) {
+    ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+  int src2 = p->vars[insn->src_args[1]].alloc;
+  orc_neon_emit_binary_long (p, i->name, i->code, dest, src1, src2);
+}
+
+static void
+orc_neon32_move_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  if (p->insn_shift > i->vec_shift + 1) {
+    ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  int is_quad = p->insn_shift == (i->vec_shift + 1);
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+
+  if (dest == src1)
+    return;
+
+  if (is_quad)
+    orc_neon_emit_binary_quad (p, i->name, i->code, dest, src1, src1);
+  else
+    orc_neon_emit_binary (p, i->name, i->code, dest, src1, src1);
+}
+
+static void
+orc_neon32_unary_vfp_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  int is_quad = p->insn_shift == (i->vec_shift + 1);
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+
+  // FIXME?: Is this logic right?
+  orc_neon_emit_unary (p, i->name, i->code, dest, src1);
+  if (is_quad)
+    orc_neon_emit_unary (p, i->name, i->code, dest + 1, src1 + 1);
+  else
+      ORC_COMPILER_ERROR(p, "shift too large");
+}
+
+static void
+orc_neon32_binary_vfp_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn * const i = (const OrcNeonInsn *) user;
+
+  int is_quad = p->insn_shift == (i->vec_shift + 1);
+  int dest = p->vars[insn->dest_args[0]].alloc;
+  int src1 = p->vars[insn->src_args[0]].alloc;
+  int src2 = p->vars[insn->src_args[1]].alloc;
+
+  // FIXME?: Is this logic right?
+  orc_neon_emit_binary (p, i->name, i->code, dest, src1, src2);
+  if (is_quad)
+    orc_neon_emit_binary (p, i->name, i->code, dest + 1, src1 + 1, src2 + 1);
+  else if (p->insn_shift > i->vec_shift + 1)
+    ORC_COMPILER_ERROR(p, "shift too large");
+}
+
+static void
+orc_neon_unary_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_unary_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_unary_rule (p, (void *)insn32, insn);
+}
+
+static void
+orc_neon_unary_long_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_unary_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_unary_long_rule (p, (void *)insn32, insn);
+}
+
+static void
+orc_neon_unary_narrow_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_unary_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_unary_narrow_rule (p, (void *)insn32, insn);
+}
+
+static void
+orc_neon_binary_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_binary_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_binary_rule (p, (void *)insn32, insn);
+}
+
+static void
+orc_neon_binary_long_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_binary_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_binary_long_rule (p, (void *)insn32, insn);
+}
+
+static void
+orc_neon_move_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_move_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_move_rule (p, (void *)insn32, insn);
+}
+
+static void
+orc_neon_unary_vfp_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_unary_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_unary_vfp_rule (p, (void *)insn32, insn);
+}
+
+static void
+orc_neon_binary_vfp_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  const OrcNeonInsn *const insn32 = &orc_neon32_insns[(long int)user];
+  const OrcNeonInsn *const insn64 = &orc_neon64_insns[(long int)user];
+
+  if (p->is_64bit)
+    orc_neon64_binary_rule (p, (void *)insn64, insn);
+  else
+    orc_neon32_binary_vfp_rule (p, (void *)insn32, insn);
+}
 
 static void
 neon_rule_loadupdb (OrcCompiler *compiler, void *user, OrcInstruction *insn)
@@ -2310,167 +3032,6 @@ orc_neon_emit_loadpq (OrcCompiler *compiler, int dest, int param)
   }
 }
 
-#define UNARY(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_unary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    if (p->insn_shift <= vec_shift) { \
-      orc_neon_emit_unary (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc); \
-    } else if (p->insn_shift == vec_shift + 1) { \
-      orc_neon_emit_unary_quad (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-#define UNARY_LONG(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_unary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    if (p->insn_shift <= vec_shift) { \
-      orc_neon_emit_unary_long (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-#define UNARY_NARROW(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_unary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    if (p->insn_shift <= vec_shift) { \
-      orc_neon_emit_unary_narrow (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-#define BINARY(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_binary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], \
-          p->vars[insn->src_args[1]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet"); \
-    } \
-  } else { \
-    if (p->insn_shift <= vec_shift) { \
-      orc_neon_emit_binary (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc, \
-          p->vars[insn->src_args[1]].alloc); \
-    } else if (p->insn_shift == vec_shift + 1) { \
-      orc_neon_emit_binary_quad (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc, \
-          p->vars[insn->src_args[1]].alloc); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-#define BINARY_LONG(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_binary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], \
-          p->vars[insn->src_args[1]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    if (p->insn_shift <= vec_shift) { \
-    orc_neon_emit_binary_long (p, insn_name, code, \
-        p->vars[insn->dest_args[0]].alloc, \
-        p->vars[insn->src_args[0]].alloc, \
-        p->vars[insn->src_args[1]].alloc); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-#define MOVE(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->vars[insn->dest_args[0]].alloc == p->vars[insn->src_args[0]].alloc) { \
-    return; \
-  } \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_binary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], \
-          p->vars[insn->src_args[0]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    if (p->insn_shift <= vec_shift) { \
-      orc_neon_emit_binary (p, "vorr", 0xf2200110, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc); \
-    } else if (p->insn_shift == vec_shift + 1) { \
-      orc_neon_emit_binary_quad (p, "vorr", 0xf2200110, \
-          p->vars[insn->dest_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc, \
-          p->vars[insn->src_args[0]].alloc); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
 typedef struct {
   orc_uint32 code;
   char *name;
@@ -2708,214 +3269,150 @@ orc_neon_rule_andn (OrcCompiler *p, void *user, OrcInstruction *insn)
   }
 }
 
-
-
-UNARY(absb,"vabs.s8",0xf3b10300, "abs", 0x0e20b800, 3)
-BINARY(addb,"vadd.i8",0xf2000800, "add", 0x0e208400, 3)
-BINARY(addssb,"vqadd.s8",0xf2000010, "sqadd", 0x0e200c00, 3)
-BINARY(addusb,"vqadd.u8",0xf3000010, "uqadd", 0x2e200c00, 3)
-BINARY(andb,"vand",0xf2000110, "and", 0x0e201c00, 3)
-/* BINARY(andnb,"vbic",0xf2100110, NULL, 0, 3) */
-BINARY(avgsb,"vrhadd.s8",0xf2000100, "srhadd", 0x0e201400, 3)
-BINARY(avgub,"vrhadd.u8",0xf3000100, "urhadd", 0x2e201400, 3)
-BINARY(cmpeqb,"vceq.i8",0xf3000810, "cmeq", 0x2e208c00, 3)
-BINARY(cmpgtsb,"vcgt.s8",0xf2000300, "cmgt", 0x0e203400, 3)
-MOVE(copyb,"vmov",0xf2200110, "mov", 0x0ea01c00, 3)
-BINARY(maxsb,"vmax.s8",0xf2000600, "smax", 0x0e206400, 3)
-BINARY(maxub,"vmax.u8",0xf3000600, "umax", 0x2e206400, 3)
-BINARY(minsb,"vmin.s8",0xf2000610, "smin", 0x0e206c00, 3)
-BINARY(minub,"vmin.u8",0xf3000610, "umin", 0x2e206c00, 3)
-BINARY(mullb,"vmul.i8",0xf2000910, "mul", 0x0e209c00, 3)
-BINARY(orb,"vorr",0xf2200110, "orr", 0x0ea01c00, 3)
-/* LSHIFT(shlb,"vshl.i8",0xf2880510, NULL, 0, 3) */
-/* RSHIFT(shrsb,"vshr.s8",0xf2880010,8, NULL, 0, 3) */
-/* RSHIFT(shrub,"vshr.u8",0xf3880010,8, NULL, 0, 3) */
-BINARY(subb,"vsub.i8",0xf3000800, "sub", 0x2e208400, 3)
-BINARY(subssb,"vqsub.s8",0xf2000210, "sqsub", 0x0e202c00, 3)
-BINARY(subusb,"vqsub.u8",0xf3000210, "uqsub", 0x2e202c00, 3)
-BINARY(xorb,"veor",0xf3000110, "eor", 0x2e201c00, 3)
-
-UNARY(absw,"vabs.s16",0xf3b50300, "abs", 0x0e60b800, 2)
-BINARY(addw,"vadd.i16",0xf2100800, "add", 0x0e608400, 2)
-BINARY(addssw,"vqadd.s16",0xf2100010, "sqadd", 0x0e600c00, 2)
-BINARY(addusw,"vqadd.u16",0xf3100010, "uqadd", 0x2e600c00, 2)
-BINARY(andw,"vand",0xf2000110, "and", 0x0e201c00, 2)
-/* BINARY(andnw,"vbic",0xf2100110, NULL, 0, 2) */
-BINARY(avgsw,"vrhadd.s16",0xf2100100, "srhadd", 0x0e601400, 2)
-BINARY(avguw,"vrhadd.u16",0xf3100100, "urhadd", 0x2e601400, 2)
-BINARY(cmpeqw,"vceq.i16",0xf3100810, "cmeq", 0x2e608c00, 2)
-BINARY(cmpgtsw,"vcgt.s16",0xf2100300, "cmgt", 0x0e603400, 2)
-MOVE(copyw,"vmov",0xf2200110, "mov", 0x0ea01c00, 2)
-BINARY(maxsw,"vmax.s16",0xf2100600, "smax", 0x0e606400, 2)
-BINARY(maxuw,"vmax.u16",0xf3100600, "umax", 0x2e606400, 2)
-BINARY(minsw,"vmin.s16",0xf2100610, "smin", 0x0e606c00, 2)
-BINARY(minuw,"vmin.u16",0xf3100610, "umin", 0x2e606c00, 2)
-BINARY(mullw,"vmul.i16",0xf2100910, "mul", 0x0e609c00, 2)
-BINARY(orw,"vorr",0xf2200110, "orr", 0x0ea01c00, 2)
-/* LSHIFT(shlw,"vshl.i16",0xf2900510, NULL, 0, 2) */
-/* RSHIFT(shrsw,"vshr.s16",0xf2900010,16, NULL, 0, 2) */
-/* RSHIFT(shruw,"vshr.u16",0xf3900010,16, NULL, 0, 2) */
-BINARY(subw,"vsub.i16",0xf3100800, "sub", 0x2e608400, 2)
-BINARY(subssw,"vqsub.s16",0xf2100210, "sqsub", 0x0e602c00, 2)
-BINARY(subusw,"vqsub.u16",0xf3100210, "uqsub", 0x2e602c00, 2)
-BINARY(xorw,"veor",0xf3000110, "eor", 0x2e201c00, 2)
-
-UNARY(absl,"vabs.s32",0xf3b90300, "abs", 0x0ea0b800, 1)
-BINARY(addl,"vadd.i32",0xf2200800, "add", 0x0ea08400, 1)
-BINARY(addssl,"vqadd.s32",0xf2200010, "sqadd", 0x0ea00c00, 1)
-BINARY(addusl,"vqadd.u32",0xf3200010, "uqadd", 0x2ea00c00, 1)
-BINARY(andl,"vand",0xf2000110, "and", 0x0e201c00, 1)
-/* BINARY(andnl,"vbic",0xf2100110, NULL, 0, 1) */
-BINARY(avgsl,"vrhadd.s32",0xf2200100, "srhadd", 0x0ea01400, 1)
-BINARY(avgul,"vrhadd.u32",0xf3200100, "urhadd", 0x2ea01400, 1)
-BINARY(cmpeql,"vceq.i32",0xf3200810, "cmeq", 0x2ea08c00, 1)
-BINARY(cmpgtsl,"vcgt.s32",0xf2200300, "cmgt", 0x0ea03400, 1)
-MOVE(copyl,"vmov",0xf2200110, "mov", 0x0ea01c00, 1)
-BINARY(maxsl,"vmax.s32",0xf2200600, "smax", 0x0ea06400, 1)
-BINARY(maxul,"vmax.u32",0xf3200600, "umax", 0x2ea06400, 1)
-BINARY(minsl,"vmin.s32",0xf2200610, "smin", 0x0ea06c00, 1)
-BINARY(minul,"vmin.u32",0xf3200610, "umin", 0x2ea06c00, 1)
-BINARY(mulll,"vmul.i32",0xf2200910, "mul", 0x0ea09c00, 1)
-BINARY(orl,"vorr",0xf2200110, "orr", 0x0ea01c00, 1)
-/* LSHIFT(shll,"vshl.i32",0xf2a00510, NULL, 0, 1) */
-/* RSHIFT(shrsl,"vshr.s32",0xf2a00010,32, NULL, 0, 1) */
-/* RSHIFT(shrul,"vshr.u32",0xf3a00010,32, NULL, 0, 1) */
-BINARY(subl,"vsub.i32",0xf3200800, "sub", 0x2ea08400, 1)
-BINARY(subssl,"vqsub.s32",0xf2200210, "sqsub", 0x0ea02c00, 1)
-BINARY(subusl,"vqsub.u32",0xf3200210, "uqsub", 0x2ea02c00, 1)
-BINARY(xorl,"veor",0xf3000110, "eor", 0x2e201c00, 1)
-
-/* UNARY(absq,"vabs.s64",0xf3b10300, "abs", 0xee0b800, 0) */
-BINARY(addq,"vadd.i64",0xf2300800, "add", 0x4ee08400, 0)
-/* BINARY(addssq,"vqadd.s64",0xf2000010, "sqadd", 0x0ee00c00, 0) */
-/* BINARY(addusq,"vqadd.u64",0xf3000010, "uqadd", 0x2ee00c00, 0) */
-BINARY(andq,"vand",0xf2000110, "and", 0x0e201c00, 0)
-/* BINARY(avgsq,"vrhadd.s64",0xf2000100, "srhadd", 0x0ee01400, 0) */
-/* BINARY(avguq,"vrhadd.u64",0xf3000100, "urhadd", 0x2ee01400, 0) */
-/* BINARY(cmpeqq,"vceq.i64",0xf3000810, "cmeq", 0x2ee08c00, 0) */
-/* BINARY(cmpgtsq,"vcgt.s64",0xf2000300, "cmgt", 0x0ee03400, 0) */
-MOVE(copyq,"vmov",0xf2200110, "mov", 0x0ea01c00, 0)
-/* BINARY(maxsq,"vmax.s64",0xf2000600, "smax", 0x0ee06400, 0) */
-/* BINARY(maxuq,"vmax.u64",0xf3000600, "umax", 0x2ee06400, 0) */
-/* BINARY(minsq,"vmin.s64",0xf2000610, "smin", 0x0ee06c00, 0) */
-/* BINARY(minuq,"vmin.u64",0xf3000610, "umin", 0x2ee06c00, 0) */
-/* BINARY(mullq,"vmul.i64",0xf2000910, "mul", 0x0ee09c00, 0) */
-BINARY(orq,"vorr",0xf2200110, "orr", 0x0ea01c00, 0)
-BINARY(subq,"vsub.i64",0xf3300800, "sub", 0x6ee08400, 0)
-/* BINARY(subssq,"vqsub.s64",0xf2000210, "sqsub", 0x0ee00c00, 0) */
-/* BINARY(subusq,"vqsub.u64",0xf3000210, "uqsub", 0x2ee00c00, 0) */
-BINARY(xorq,"veor",0xf3000110, "eor", 0x2e201c00, 0)
-
-UNARY_LONG(convsbw,"vmovl.s8",0xf2880a10, "sshll", 0x0f08a400, 3)
-UNARY_LONG(convubw,"vmovl.u8",0xf3880a10, "ushll", 0x2f08a400, 3)
-UNARY_LONG(convswl,"vmovl.s16",0xf2900a10, "sshll", 0x0f10a400, 2)
-UNARY_LONG(convuwl,"vmovl.u16",0xf3900a10, "ushll", 0x2f10a400, 2)
-UNARY_LONG(convslq,"vmovl.s32",0xf2a00a10, "sshll", 0x0f20a400, 1)
-UNARY_LONG(convulq,"vmovl.u32",0xf3a00a10, "ushll", 0x2f20a400, 1)
-UNARY_NARROW(convwb,"vmovn.i16",0xf3b20200, "xtn", 0x0e212800, 3)
-UNARY_NARROW(convssswb,"vqmovn.s16",0xf3b20280, "sqxtn", 0x0e214800, 3)
-UNARY_NARROW(convsuswb,"vqmovun.s16",0xf3b20240, "sqxtun", 0x2e212800, 3)
-UNARY_NARROW(convuuswb,"vqmovn.u16",0xf3b202c0, "uqxtn", 0x2e214800, 3)
-UNARY_NARROW(convlw,"vmovn.i32",0xf3b60200, "xtn", 0x0e612800, 2)
-UNARY_NARROW(convql,"vmovn.i64",0xf3ba0200, "xtn", 0x0ea12800, 1)
-UNARY_NARROW(convssslw,"vqmovn.s32",0xf3b60280, "sqxtn", 0x0e614800, 2)
-UNARY_NARROW(convsuslw,"vqmovun.s32",0xf3b60240, "sqxtun", 0x2e612800, 2)
-UNARY_NARROW(convuuslw,"vqmovn.u32",0xf3b602c0, "uqxtn", 0x2e614800, 2)
-UNARY_NARROW(convsssql,"vqmovn.s64",0xf3ba0280, "sqxtn", 0x0ea14800, 1)
-UNARY_NARROW(convsusql,"vqmovun.s64",0xf3ba0240, "sqxtun", 0x2ea12800, 1)
-UNARY_NARROW(convuusql,"vqmovn.u64",0xf3ba02c0, "uqxtn", 0x2ea14800, 1)
-
-BINARY_LONG(mulsbw,"vmull.s8",0xf2800c00, "smull", 0x0e20c000, 3)
-BINARY_LONG(mulubw,"vmull.u8",0xf3800c00, "umull", 0x2e20c000, 3)
-BINARY_LONG(mulswl,"vmull.s16",0xf2900c00, "smull", 0x0e60c000, 2)
-BINARY_LONG(muluwl,"vmull.u16",0xf3900c00, "umull", 0x2e60c000, 2)
-
-UNARY(swapw,"vrev16.i8",0xf3b00100, "rev16", 0x0e201800, 2)
-UNARY(swapl,"vrev32.i8",0xf3b00080, "rev32", 0x2e200800, 1)
-UNARY(swapq,"vrev64.i8",0xf3b00000, "rev64", 0x0e200800, 0)
-UNARY(swapwl,"vrev32.i16",0xf3b40080, "rev32", 0x2e600800, 1)
-UNARY(swaplq,"vrev64.i32",0xf3b80000, "rev64", 0x0ea00800, 0)
-
-UNARY_NARROW(select0ql,"vmovn.i64",0xf3ba0200, "xtn", 0x0ea12800, 1)
-UNARY_NARROW(select0lw,"vmovn.i32",0xf3b60200, "xtn", 0x0e612800, 2)
-UNARY_NARROW(select0wb,"vmovn.i16",0xf3b20200, "xtn", 0x0e212800, 3)
-
-BINARY(addf,"vadd.f32",0xf2000d00, "fadd", 0x0e20d400, 1)
-BINARY(subf,"vsub.f32",0xf2200d00, "fsub", 0x0ea0d400, 1)
-BINARY(mulf,"vmul.f32",0xf3000d10, "fmul", 0x2e20dc00, 1)
-BINARY(maxf,"vmax.f32",0xf2000f00, "fmax", 0x0e20f400, 1)
-BINARY(minf,"vmin.f32",0xf2200f00, "fmin", 0x0ea0f400, 1)
-BINARY(cmpeqf,"vceq.f32",0xf2000e00, "fcmeq", 0x5e20e400, 1)
-/* BINARY_R(cmpltf,"vclt.f32",0xf3200e00, "fcmlt", 0x5ef8e800, 1) */
-/* BINARY_R(cmplef,"vcle.f32",0xf3000e00, "fcmle", 0x7ef8d800, 1) */
-UNARY(convfl,"vcvt.s32.f32",0xf3bb0700, "fcvtzs", 0x0ea1b800, 1)
-UNARY(convlf,"vcvt.f32.s32",0xf3bb0600, "scvtf", 0x0e21d800, 1)
-
-#define UNARY_VFP(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_unary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], vec_shift - 1); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    orc_neon_emit_unary (p, insn_name, code, \
-        p->vars[insn->dest_args[0]].alloc, \
-        p->vars[insn->src_args[0]].alloc); \
-    if (p->insn_shift == vec_shift + 1) { \
-      orc_neon_emit_unary (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc + 1, \
-          p->vars[insn->src_args[0]].alloc + 1); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-#define BINARY_VFP(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_binary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], \
-          p->vars[insn->src_args[1]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    orc_neon_emit_binary (p, insn_name, code, \
-        p->vars[insn->dest_args[0]].alloc, \
-        p->vars[insn->src_args[0]].alloc, \
-        p->vars[insn->src_args[1]].alloc); \
-    if (p->insn_shift == vec_shift + 1) { \
-      orc_neon_emit_binary (p, insn_name, code, \
-          p->vars[insn->dest_args[0]].alloc+1, \
-          p->vars[insn->src_args[0]].alloc+1, \
-          p->vars[insn->src_args[1]].alloc+1); \
-    } else if (p->insn_shift > vec_shift + 1) { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-BINARY_VFP(addd,"vadd.f64",0xee300b00, "fadd", 0x4e60d400, 0)
-BINARY_VFP(subd,"vsub.f64",0xee300b40, "fsub", 0x4ee0d400, 0)
-BINARY_VFP(muld,"vmul.f64",0xee200b00, "fmul", 0x6e60dc00, 0)
-BINARY_VFP(divd,"vdiv.f64",0xee800b00, "fdiv", 0x6e60fc00, 0)
-BINARY_VFP(divf,"vdiv.f32",0xee800a00, "fdiv", 0x6e20fc00, 0)
-UNARY_VFP(sqrtd,"vsqrt.f64",0xeeb10b00, "fsqrt", 0x6ee1f800, 0)
-UNARY_VFP(sqrtf,"vsqrt.f32",0xeeb10ac0, "fsqrt", 0x6ea1f800, 0)
-/* BINARY_VFP(cmpeqd,"vcmpe.f64",0xee000000, NULL, 0, 0) */
-UNARY_VFP(convdf,"vcvt.f64.f32",0xee200b00, "fcvtzs", 0x4ee1b800, 0)
-UNARY_VFP(convfd,"vcvt.f32.f64",0xee200b00, "scvtf", 0x4e61d800, 0)
+static const OrcNeonRule orc_neon_rules[] = {
+  [ORC_NEON_OP_ABSB]      = { "absb"     , orc_neon_unary_rule        },
+  [ORC_NEON_OP_ADDB]      = { "addb"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ADDSSB]    = { "addssb"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ADDUSB]    = { "addusb"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ANDB]      = { "andb"     , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_ANDNB]     = { "andnb"    , orc_neon_binary_rule       }, */
+  [ORC_NEON_OP_AVGSB]     = { "avgsb"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_AVGUB]     = { "avgub"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CMPEQB]    = { "cmpeqb"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CMPGTSB]   = { "cmpgtsb"  , orc_neon_binary_rule       },
+  [ORC_NEON_OP_COPYB]     = { "copyb"    , orc_neon_move_rule         },
+  [ORC_NEON_OP_MAXSB]     = { "maxsb"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MAXUB]     = { "maxub"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MINSB]     = { "minsb"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MINUB]     = { "minub"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MULLB]     = { "mullb"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ORB]       = { "orb"      , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_SHLB]      = { "shlb"     , orc_neon_lshift_rule       }, */
+/*[ORC_NEON_OP_SHRSB]     = { "shrsb"    , orc_neon_rshift_rule       }, */
+/*[ORC_NEON_OP_SHRUB]     = { "shrub"    , orc_neon_rshift_rule       }, */
+  [ORC_NEON_OP_SUBB]      = { "subb"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBSSB]    = { "subssb"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBUSB]    = { "subusb"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_XORB]      = { "xorb"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ABSW]      = { "absw"     , orc_neon_unary_rule        },
+  [ORC_NEON_OP_ADDW]      = { "addw"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ADDSSW]    = { "addssw"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ADDUSW]    = { "addusw"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ANDW]      = { "andw"     , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_ANDNW]     = { "andnw"    , orc_neon_binary_rule       }, */
+  [ORC_NEON_OP_AVGSW]     = { "avgsw"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_AVGUW]     = { "avguw"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CMPEQW]    = { "cmpeqw"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CMPGTSW]   = { "cmpgtsw"  , orc_neon_binary_rule       },
+  [ORC_NEON_OP_COPYW]     = { "copyw"    , orc_neon_move_rule         },
+  [ORC_NEON_OP_MAXSW]     = { "maxsw"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MAXUW]     = { "maxuw"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MINSW]     = { "minsw"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MINUW]     = { "minuw"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MULLW]     = { "mullw"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ORW]       = { "orw"      , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_SHLW]      = { "shlw"     , orc_neon_lshift_rule       }, */
+/*[ORC_NEON_OP_SHRSW]     = { "shrsw"    , orc_neon_rshift_rule       }, */
+/*[ORC_NEON_OP_SHRUW]     = { "shruw"    , orc_neon_rshift_rule       }, */
+  [ORC_NEON_OP_SUBW]      = { "subw"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBSSW]    = { "subssw"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBUSW]    = { "subusw"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_XORW]      = { "xorw"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ABSL]      = { "absl"     , orc_neon_unary_rule        },
+  [ORC_NEON_OP_ADDL]      = { "addl"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ADDSSL]    = { "addssl"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ADDUSL]    = { "addusl"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ANDL]      = { "andl"     , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_ANDNL]     = { "andnl"    , orc_neon_binary_rule       }, */
+  [ORC_NEON_OP_AVGSL]     = { "avgsl"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_AVGUL]     = { "avgul"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CMPEQL]    = { "cmpeql"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CMPGTSL]   = { "cmpgtsl"  , orc_neon_binary_rule       },
+  [ORC_NEON_OP_COPYL]     = { "copyl"    , orc_neon_move_rule         },
+  [ORC_NEON_OP_MAXSL]     = { "maxsl"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MAXUL]     = { "maxul"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MINSL]     = { "minsl"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MINUL]     = { "minul"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MULLL]     = { "mulll"    , orc_neon_binary_rule       },
+  [ORC_NEON_OP_ORL]       = { "orl"      , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_SHLL]      = { "shll"     , orc_neon_lshift_rule       }, */
+/*[ORC_NEON_OP_SHRSL]     = { "shrsl"    , orc_neon_rshift_rule       }, */
+/*[ORC_NEON_OP_SHRUL]     = { "shrul"    , orc_neon_rshift_rule       }, */
+  [ORC_NEON_OP_SUBL]      = { "subl"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBSSL]    = { "subssl"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBUSL]    = { "subusl"   , orc_neon_binary_rule       },
+  [ORC_NEON_OP_XORL]      = { "xorl"     , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_ABSQ]      = { "absq"     , orc_neon_unary_rule        }, */
+  [ORC_NEON_OP_ADDQ]      = { "addq"     , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_ADDSSQ]    = { "addssq"   , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_ADDUSQ]    = { "addusq"   , orc_neon_binary_rule       }, */
+  [ORC_NEON_OP_ANDQ]      = { "andq"     , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_AVGSQ]     = { "avgsq"    , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_AVGUQ]     = { "avguq"    , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_CMPEQQ]    = { "cmpeqq"   , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_CMPGTSQ]   = { "cmpgtsq"  , orc_neon_binary_rule       }, */
+  [ORC_NEON_OP_COPYQ]     = { "copyq"    , orc_neon_move_rule         },
+/*[ORC_NEON_OP_MAXSQ]     = { "maxsq"    , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_MAXUQ]     = { "maxuq"    , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_MINSQ]     = { "minsq"    , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_MINUQ]     = { "minuq"    , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_MULLQ]     = { "mullq"    , orc_neon_binary_rule       }, */
+  [ORC_NEON_OP_ORQ]       = { "orq"      , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBQ]      = { "subq"     , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_SUBSSQ]    = { "subssq"   , orc_neon_binary_rule       }, */
+/*[ORC_NEON_OP_SUBUSQ]    = { "subusq"   , orc_neon_binary_rule       }, */
+  [ORC_NEON_OP_XORQ]      = { "xorq"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CONVSBW]   = { "convsbw"  , orc_neon_unary_long_rule   },
+  [ORC_NEON_OP_CONVUBW]   = { "convubw"  , orc_neon_unary_long_rule   },
+  [ORC_NEON_OP_CONVSWL]   = { "convswl"  , orc_neon_unary_long_rule   },
+  [ORC_NEON_OP_CONVUWL]   = { "convuwl"  , orc_neon_unary_long_rule   },
+  [ORC_NEON_OP_CONVSLQ]   = { "convslq"  , orc_neon_unary_long_rule   },
+  [ORC_NEON_OP_CONVULQ]   = { "convulq"  , orc_neon_unary_long_rule   },
+  [ORC_NEON_OP_CONVWB]    = { "convwb"   , orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVSSSWB] = { "convssswb", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVSUSWB] = { "convsuswb", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVUUSWB] = { "convuuswb", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVLW]    = { "convlw"   , orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVQL]    = { "convql"   , orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVSSSLW] = { "convssslw", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVSUSLW] = { "convsuslw", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVUUSLW] = { "convuuslw", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVSSSQL] = { "convsssql", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVSUSQL] = { "convsusql", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_CONVUUSQL] = { "convuusql", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_MULSBW]    = { "mulsbw"   , orc_neon_binary_long_rule  },
+  [ORC_NEON_OP_MULUBW]    = { "mulubw"   , orc_neon_binary_long_rule  },
+  [ORC_NEON_OP_MULSWL]    = { "mulswl"   , orc_neon_binary_long_rule  },
+  [ORC_NEON_OP_MULUWL]    = { "muluwl"   , orc_neon_binary_long_rule  },
+  [ORC_NEON_OP_SWAPW]     = { "swapw"    , orc_neon_unary_rule        },
+  [ORC_NEON_OP_SWAPL]     = { "swapl"    , orc_neon_unary_rule        },
+  [ORC_NEON_OP_SWAPQ]     = { "swapq"    , orc_neon_unary_rule        },
+  [ORC_NEON_OP_SWAPWL]    = { "swapwl"   , orc_neon_unary_rule        },
+  [ORC_NEON_OP_SWAPLQ]    = { "swaplq"   , orc_neon_unary_rule        },
+  [ORC_NEON_OP_SELECT0QL] = { "select0ql", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_SELECT0LW] = { "select0lw", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_SELECT0WB] = { "select0wb", orc_neon_unary_narrow_rule },
+  [ORC_NEON_OP_ADDF]      = { "addf"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_SUBF]      = { "subf"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MULF]      = { "mulf"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MAXF]      = { "maxf"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_MINF]      = { "minf"     , orc_neon_binary_rule       },
+  [ORC_NEON_OP_CMPEQF]    = { "cmpeqf"   , orc_neon_binary_rule       },
+/*[ORC_NEON_OP_CMPLTF]    = { "cmpltf"   , orc_neon_binary_r_rule     }, */
+/*[ORC_NEON_OP_CMPLEF]    = { "cmplef"   , orc_neon_binary_r_rule     }, */
+  [ORC_NEON_OP_CONVFL]    = { "convfl"   , orc_neon_unary_rule        },
+  [ORC_NEON_OP_CONVLF]    = { "convlf"   , orc_neon_unary_rule        },
+  [ORC_NEON_OP_ADDD]      = { "addd"     , orc_neon_binary_vfp_rule   },
+  [ORC_NEON_OP_SUBD]      = { "subd"     , orc_neon_binary_vfp_rule   },
+  [ORC_NEON_OP_MULD]      = { "muld"     , orc_neon_binary_vfp_rule   },
+  [ORC_NEON_OP_DIVD]      = { "divd"     , orc_neon_binary_vfp_rule   },
+  [ORC_NEON_OP_DIVF]      = { "divf"     , orc_neon_binary_vfp_rule   },
+  [ORC_NEON_OP_SQRTD]     = { "sqrtd"    , orc_neon_unary_vfp_rule    },
+  [ORC_NEON_OP_SQRTF]     = { "sqrtf"    , orc_neon_unary_vfp_rule    },
+/*[ORC_NEON_OP_CMPEQD]    = { "cmpeqd"   , orc_neon_binary_vfp_rule   }, */
+  [ORC_NEON_OP_CONVDF]    = { "convdf"   , orc_neon_unary_vfp_rule    },
+  [ORC_NEON_OP_CONVFD]    = { "convfd"   , orc_neon_unary_vfp_rule    },
+};
 
 static void
 orc_neon_rule_accw (OrcCompiler *p, void *user, OrcInstruction *insn)
@@ -4252,139 +4749,30 @@ orc_compiler_neon_register_rules (OrcTarget *target)
 
   rule_set = orc_rule_set_new (orc_opcode_set_get("sys"), target, 0);
 
+  for (long int i = 0; i < sizeof(orc_neon_rules) / sizeof(OrcNeonRule); i++) {
+    const OrcNeonRule * const r = &orc_neon_rules[i];
+    orc_rule_register (rule_set, r->orc_opcode, r->rule, (void *)i);
+  }
+
 #define REG(x) \
     orc_rule_register (rule_set, #x , orc_neon_rule_ ## x, NULL)
 
-  REG(absb);
-  REG(addb);
-  REG(addssb);
-  REG(addusb);
-  REG(andb);
-  /* REG(andnb); */
-  REG(avgsb);
-  REG(avgub);
-  REG(cmpeqb);
-  REG(cmpgtsb);
-  REG(copyb);
-  REG(maxsb);
-  REG(maxub);
-  REG(minsb);
-  REG(minub);
-  REG(mullb);
   REG(mulhsb);
   REG(mulhub);
-  REG(orb);
-  /* REG(shlb); */
-  /* REG(shrsb); */
-  /* REG(shrub); */
   REG(signb);
-  REG(subb);
-  REG(subssb);
-  REG(subusb);
-  REG(xorb);
-
-  REG(absw);
-  REG(addw);
-  REG(addssw);
-  REG(addusw);
-  REG(andw);
-  /* REG(andnw); */
-  REG(avgsw);
-  REG(avguw);
-  REG(cmpeqw);
-  REG(cmpgtsw);
-  REG(copyw);
-  REG(maxsw);
-  REG(maxuw);
-  REG(minsw);
-  REG(minuw);
-  REG(mullw);
   REG(mulhsw);
   REG(mulhuw);
-  REG(orw);
-  /* REG(shlw); */
-  /* REG(shrsw); */
-  /* REG(shruw); */
   REG(signw);
-  REG(subw);
-  REG(subssw);
-  REG(subusw);
-  REG(xorw);
-
-  REG(absl);
-  REG(addl);
-  REG(addssl);
-  REG(addusl);
-  REG(andl);
-  /* REG(andnl); */
-  REG(avgsl);
-  REG(avgul);
-  REG(cmpeql);
-  REG(cmpgtsl);
-  REG(copyl);
-  REG(maxsl);
-  REG(maxul);
-  REG(minsl);
-  REG(minul);
-  REG(mulll);
   REG(mulhsl);
   REG(mulhul);
-  REG(orl);
-  /* REG(shll); */
-  /* REG(shrsl); */
-  /* REG(shrul); */
   REG(signl);
-  REG(subl);
-  REG(subssl);
-  REG(subusl);
-  REG(xorl);
-
-  REG(addq);
-  REG(andq);
-  REG(orq);
-  REG(copyq);
-  REG(subq);
-  REG(xorq);
-
-  REG(convsbw);
-  REG(convubw);
-  REG(convswl);
-  REG(convuwl);
-  REG(convslq);
-  REG(convulq);
-  REG(convlw);
-  REG(convql);
-  REG(convssslw);
-  REG(convsuslw);
-  REG(convuuslw);
-  REG(convsssql);
-  REG(convsusql);
-  REG(convuusql);
-  REG(convwb);
   REG(convhwb);
   REG(convhlw);
-  REG(convssswb);
-  REG(convsuswb);
-  REG(convuuswb);
-
-  REG(mulsbw);
-  REG(mulubw);
-  REG(mulswl);
-  REG(muluwl);
-
   REG(accw);
   REG(accl);
   REG(accsadubl);
-  REG(swapw);
-  REG(swapl);
-  REG(swapq);
-  REG(swapwl);
-  REG(swaplq);
-  REG(select0wb);
   REG(select1wb);
-  REG(select0lw);
   REG(select1lw);
-  REG(select0ql);
   REG(select1ql);
   REG(mergebw);
   REG(mergewl);
@@ -4392,29 +4780,6 @@ orc_compiler_neon_register_rules (OrcTarget *target)
   REG(splitql);
   REG(splitlw);
   REG(splitwb);
-
-  REG(addf);
-  REG(subf);
-  REG(mulf);
-  REG(divf);
-  REG(sqrtf);
-  REG(maxf);
-  REG(minf);
-  REG(cmpeqf);
-  /* REG(cmpltf); */
-  /* REG(cmplef); */
-  REG(convfl);
-  REG(convlf);
-
-  REG(addd);
-  REG(subd);
-  REG(muld);
-  REG(divd);
-  REG(sqrtd);
-  /* REG(cmpeqd); */
-  REG(convdf);
-  REG(convfd);
-
   REG(splatbw);
   REG(splatbl);
   REG(splatw3q);
