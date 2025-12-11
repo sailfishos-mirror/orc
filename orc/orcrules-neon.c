@@ -372,26 +372,6 @@ orc_neon_emit_binary_long (OrcCompiler *p, const char *name, unsigned int code,
   orc_arm_emit (p, code);
 }
 
-#if 0
-static void
-orc_neon_emit_binary_narrow (OrcCompiler *p, const char *name, unsigned int code,
-    int dest, int src1, int src2)
-{
-  ORC_ASSERT((code & 0x004ff0af) == 0);
-
-  ORC_ASM_CODE(p,"  %s %s, %s, %s\n", name,
-      orc_neon_reg_name (dest), orc_neon_reg_name_quad (src1),
-      orc_neon_reg_name_quad (src2));
-  code |= (dest&0xf)<<12;
-  code |= ((dest>>4)&0x1)<<22;
-  code |= (src1&0xf)<<16;
-  code |= ((src1>>4)&0x1)<<7;
-  code |= (src2&0xf)<<0;
-  code |= ((src2>>4)&0x1)<<5;
-  orc_arm_emit (p, code);
-}
-#endif
-
 static void
 orc_neon_emit_binary_quad (OrcCompiler *p, const char *name, unsigned int code,
     int dest, int src1, int src2)
@@ -2449,31 +2429,6 @@ orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
   } else { \
     if (p->insn_shift <= vec_shift) { \
     orc_neon_emit_binary_long (p, insn_name, code, \
-        p->vars[insn->dest_args[0]].alloc, \
-        p->vars[insn->src_args[0]].alloc, \
-        p->vars[insn->src_args[1]].alloc); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "shift too large"); \
-    } \
-  } \
-}
-
-#define BINARY_NARROW(opcode,insn_name,code,insn_name64,code64,vec_shift) \
-static void \
-orc_neon_rule_ ## opcode (OrcCompiler *p, void *user, OrcInstruction *insn) \
-{ \
-  if (p->is_64bit) { \
-    if (insn_name64) { \
-      orc_neon64_emit_binary (p, insn_name64, code64, \
-          p->vars[insn->dest_args[0]], \
-          p->vars[insn->src_args[0]], \
-          p->vars[insn->src_args[1]], vec_shift); \
-    } else { \
-      ORC_COMPILER_ERROR(p, "not supported in AArch64 yet [%s %x]", (insn_name64), (code64)); \
-    } \
-  } else { \
-    if (p->insn_shift <= vec_shift) { \
-    orc_neon_emit_binary_narrow (p, insn_name, code, \
         p->vars[insn->dest_args[0]].alloc, \
         p->vars[insn->src_args[0]].alloc, \
         p->vars[insn->src_args[1]].alloc); \
