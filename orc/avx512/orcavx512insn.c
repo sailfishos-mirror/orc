@@ -883,19 +883,21 @@ orc_avx512_insn_validate_mask_reg (int reg)
     return FALSE;
 }
 
+/* For AVX we extend it to 32 registers */
 static orc_bool
 orc_avx512_insn_validate_avx_reg (int reg)
 {
-  if (reg >= X86_YMM0 && reg < X86_YMM0 + 16)
+  if (reg >= X86_YMM0 && reg < X86_YMM0 + 32)
     return TRUE;
   else
     return FALSE;
 }
 
+/* For SSE we extend it to 32 registers */
 static orc_bool
 orc_avx512_insn_validate_sse_reg (int reg)
 {
-  if (reg >= X86_XMM0 && reg < X86_XMM0 + 16)
+  if (reg >= X86_XMM0 && reg < X86_XMM0 + 32)
     return TRUE;
   else
     return FALSE;
