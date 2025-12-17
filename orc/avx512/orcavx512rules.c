@@ -463,14 +463,16 @@ orc_avx512_rule_loadupib (OrcCompiler *c, void *user, OrcInstruction *insn)
   int tmp;
   const int offset = (c->offset * src->size) >> 1;
   const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn, 0));
+  /* ensure we load at least 1 byte */
+  const int load_size = (size <= 2) ? 1 : (size >> 1);
 
   ptr_reg = orc_x86_compiler_load_src_argument (c, insn, 0);
   tmp = orc_compiler_get_temp_reg (c);
 
   /* Load two adjacent half-size chunks for interpolation */
-  orc_avx512_insn_emit_mov_memoffset_reg (c, size >> 1, offset, ptr_reg,
+  orc_avx512_insn_emit_mov_memoffset_reg (c, load_size, offset, ptr_reg,
       dest->alloc, FALSE);
-  orc_avx512_insn_emit_mov_memoffset_reg (c, size >> 1, offset + 1,
+  orc_avx512_insn_emit_mov_memoffset_reg (c, load_size, offset + 1,
       ptr_reg, tmp, FALSE);
 
   /* Average the two chunks - vpavgb always takes ZMM register indices */
@@ -479,12 +481,77 @@ orc_avx512_rule_loadupib (OrcCompiler *c, void *user, OrcInstruction *insn)
 
   /* Interleave average with original (interpolate) */
   if (size >= 64) {
-    orc_avx512_insn_emit_vpunpcklbw (c, dest->alloc, tmp, dest->alloc,
+    int tmp2 = orc_compiler_get_temp_reg (c);
+    int tmp3 = orc_compiler_get_temp_reg (c);
+    int avg_orig = orc_compiler_get_temp_reg (c);
+    
+    /* Save original dest (32 bytes in lower 256 bits) */
+    orc_avx512_insn_emit_vmovdqa32_r_r (c, dest->alloc, tmp3, ORC_REG_INVALID, FALSE);
+    /* Save original averaged tmp (for second half processing) */
+    orc_avx512_insn_emit_vmovdqa32_r_r (c, tmp, avg_orig, ORC_REG_INVALID, FALSE);
+    
+    /* Process lower 16 input bytes (bytes 0-15) → 32 output bytes */
+    /* Interleave high bytes: tmp3[15:8] with avg_orig[15:8] → tmp2[255:128] */
+    orc_avx512_insn_avx_emit_vpunpckhbw (c, ORC_AVX512_AVX_REG (tmp3),
+        ORC_AVX512_AVX_REG (avg_orig), ORC_AVX512_AVX_REG (tmp2),
         ORC_REG_INVALID, FALSE);
+    /* Interleave low bytes: tmp3[7:0] with avg_orig[7:0] → tmp[255:0] */
+    orc_avx512_insn_avx_emit_vpunpcklbw (c, ORC_AVX512_AVX_REG (tmp3),
+        ORC_AVX512_AVX_REG (avg_orig), ORC_AVX512_AVX_REG (tmp),
+        ORC_REG_INVALID, FALSE);
+    /* Combine: insert tmp2[127:0] into tmp[255:128] */
+    orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (tmp),
+        ORC_AVX512_AVX_REG (tmp2), ORC_AVX512_AVX_REG (tmp),
+        ORC_REG_INVALID, FALSE);
+    /* Now tmp[255:0] has 32 output bytes from first 16 input bytes */
+    /* Put into lower 256 bits of dest */
+    orc_avx512_insn_emit_vinserti32x8 (c, 0, dest->alloc, tmp,
+        dest->alloc, ORC_REG_INVALID, FALSE);
+    
+    /* Process upper 16 input bytes (bytes 16-31) from saved tmp3 */
+    /* Extract upper 128 bits of the saved 256-bit input into lower 128 of tmp3 */
+    orc_avx512_insn_avx_emit_vextracti32x4 (c, 1, ORC_AVX512_AVX_REG (tmp3),
+        ORC_AVX512_SSE_REG (tmp3), ORC_REG_INVALID, FALSE);
+    /* Extract upper 128 bits of the averaged data */
+    orc_avx512_insn_avx_emit_vextracti32x4 (c, 1, ORC_AVX512_AVX_REG (avg_orig),
+        ORC_AVX512_SSE_REG (avg_orig), ORC_REG_INVALID, FALSE);
+    /* Now tmp3[127:0] has bytes 16-31 of original input */
+    /* Now avg_orig[127:0] has bytes 16-31 of averaged data */
+    /* Interleave high bytes: tmp3[31:24] with avg_orig[31:24] → tmp2[255:128] */
+    orc_avx512_insn_avx_emit_vpunpckhbw (c, ORC_AVX512_AVX_REG (tmp3),
+        ORC_AVX512_AVX_REG (avg_orig), ORC_AVX512_AVX_REG (tmp2),
+        ORC_REG_INVALID, FALSE);
+    /* Interleave low bytes: tmp3[23:16] with avg_orig[23:16] → tmp[255:0] */
+    orc_avx512_insn_avx_emit_vpunpcklbw (c, ORC_AVX512_AVX_REG (tmp3),
+        ORC_AVX512_AVX_REG (avg_orig), ORC_AVX512_AVX_REG (tmp),
+        ORC_REG_INVALID, FALSE);
+    /* Combine: insert tmp2[127:0] into tmp[255:128] */
+    orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (tmp),
+        ORC_AVX512_AVX_REG (tmp2), ORC_AVX512_AVX_REG (tmp),
+        ORC_REG_INVALID, FALSE);
+    /* Now tmp[255:0] has 32 output bytes from second 16 input bytes */
+    /* Put into upper 256 bits of dest */
+    orc_avx512_insn_emit_vinserti32x8 (c, 1, dest->alloc, tmp,
+        dest->alloc, ORC_REG_INVALID, FALSE);
+    
+    orc_compiler_release_temp_reg (c, avg_orig);
+    orc_compiler_release_temp_reg (c, tmp3);
+    orc_compiler_release_temp_reg (c, tmp2);
   } else if (size >= 32) {
+    int tmp2 = orc_compiler_get_temp_reg (c);
+    /* Interleave high bytes of dest with average (tmp) */
+    orc_avx512_insn_avx_emit_vpunpckhbw (c, ORC_AVX512_AVX_REG (dest->alloc),
+        ORC_AVX512_AVX_REG (tmp), ORC_AVX512_AVX_REG (tmp2),
+        ORC_REG_INVALID, FALSE);
+    /* Interleave low bytes of dest with average (tmp) */
     orc_avx512_insn_avx_emit_vpunpcklbw (c, ORC_AVX512_AVX_REG (dest->alloc),
         ORC_AVX512_AVX_REG (tmp), ORC_AVX512_AVX_REG (dest->alloc),
         ORC_REG_INVALID, FALSE);
+    /* Insert high 128-bit lane from tmp2 into dest upper lane */
+    orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (dest->alloc), 
+        ORC_AVX512_AVX_REG (tmp2), ORC_AVX512_AVX_REG (dest->alloc), 
+        ORC_REG_INVALID, FALSE);
+    orc_compiler_release_temp_reg (c, tmp2);
   } else {
     orc_avx512_insn_sse_emit_vpunpcklbw (c, ORC_AVX512_SSE_REG (dest->alloc),
         ORC_AVX512_SSE_REG (tmp), ORC_AVX512_SSE_REG (dest->alloc),
@@ -492,7 +559,7 @@ orc_avx512_rule_loadupib (OrcCompiler *c, void *user, OrcInstruction *insn)
   }
 
   orc_compiler_release_temp_reg (c, tmp);
-  src->update_type = 1;
+  src->update_type = ORC_VARIABLE_UPDATE_TYPE_HALF;
 }
 
 /* load upsampled duplicate (byte) */
@@ -504,27 +571,89 @@ orc_avx512_rule_loadupdb (OrcCompiler *c, void *user, OrcInstruction *insn)
   int ptr_reg;
   const int offset = (c->offset * src->size) >> 1;
   const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn, 0));
+  /* load half the data, but at least 1 byte for sizes 1-2 */
+  const int load_size = (size <= 2) ? 1 : (size >> 1);
 
   ptr_reg = orc_x86_compiler_load_src_argument (c, insn, 0);
 
-  /* Load half the data */
-  orc_avx512_insn_emit_mov_memoffset_reg (c, size >> 1, offset, ptr_reg,
-      dest->alloc, src->is_aligned);
+  /* Load phase */
+  orc_avx512_insn_emit_mov_memoffset_reg (c, load_size, offset, ptr_reg,
+      dest->alloc, (size <= 2) ? FALSE : src->is_aligned);
 
-  /* Duplicate by unpacking with self, operating on appropriate register size */
+  /* Duplicate phase: switch on element size, use appropriate method for total size */
+  int tmp = 0;
+  if (size >= 32) {
+    tmp = orc_compiler_get_temp_reg (c);
+  }
+  
   switch (src->size) {
     case 1:
       if (size >= 64) {
-        /* 64-byte output: operate on ZMM (512-bit) */
-        orc_avx512_insn_emit_vpunpcklbw (c, dest->alloc, dest->alloc,
+        /* 64-byte output from 32-byte input: operate on ZMM (512-bit) */
+        /* Input is 32 bytes in dest[255:0] */
+        /* Need to duplicate each byte: 32 input → 64 output */
+        int tmp2 = orc_compiler_get_temp_reg (c);
+        int tmp3 = orc_compiler_get_temp_reg (c);
+        
+        /* Save the original input (32 bytes in lower 256 bits) */
+        orc_avx512_insn_emit_vmovdqa32_r_r (c, dest->alloc, tmp3, ORC_REG_INVALID, FALSE);
+        
+        /* Process lower 16 input bytes (bytes 0-15) → 32 output bytes */
+        /* High bytes: bytes 8-15 → bytes 16-31 */
+        orc_avx512_insn_avx_emit_vpunpckhbw (c, ORC_AVX512_AVX_REG (tmp3),
+            ORC_AVX512_AVX_REG (tmp3), ORC_AVX512_AVX_REG (tmp2),
+            ORC_REG_INVALID, FALSE);
+        /* Low bytes: bytes 0-7 → bytes 0-15 */
+        orc_avx512_insn_avx_emit_vpunpcklbw (c, ORC_AVX512_AVX_REG (tmp3),
+            ORC_AVX512_AVX_REG (tmp3), ORC_AVX512_AVX_REG (tmp),
+            ORC_REG_INVALID, FALSE);
+        /* Combine: insert tmp2[127:0] into tmp[255:128] */
+        orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (tmp),
+            ORC_AVX512_AVX_REG (tmp2), ORC_AVX512_AVX_REG (tmp),
+            ORC_REG_INVALID, FALSE);
+        /* Now tmp[255:0] has 32 output bytes from first 16 input bytes */
+        /* Put into lower 256 bits of dest */
+        orc_avx512_insn_emit_vinserti32x8 (c, 0, dest->alloc, tmp,
             dest->alloc, ORC_REG_INVALID, FALSE);
+        
+        /* Process upper 16 input bytes (bytes 16-31) from saved tmp3 */
+        /* Extract upper 128 bits of the saved 256-bit input into lower 128 of tmp3 */
+        orc_avx512_insn_avx_emit_vextracti32x4 (c, 1, ORC_AVX512_AVX_REG (tmp3),
+            ORC_AVX512_SSE_REG (tmp3), ORC_REG_INVALID, FALSE);
+        /* Now tmp3[127:0] has bytes 16-31 of original input */
+        /* High bytes: bytes 24-31 → bytes 16-31 of tmp2 */
+        orc_avx512_insn_avx_emit_vpunpckhbw (c, ORC_AVX512_AVX_REG (tmp3),
+            ORC_AVX512_AVX_REG (tmp3), ORC_AVX512_AVX_REG (tmp2),
+            ORC_REG_INVALID, FALSE);
+        /* Low bytes: bytes 16-23 → bytes 0-15 of tmp */
+        orc_avx512_insn_avx_emit_vpunpcklbw (c, ORC_AVX512_AVX_REG (tmp3),
+            ORC_AVX512_AVX_REG (tmp3), ORC_AVX512_AVX_REG (tmp),
+            ORC_REG_INVALID, FALSE);
+        /* Combine: insert tmp2[127:0] into tmp[255:128] */
+        orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (tmp),
+            ORC_AVX512_AVX_REG (tmp2), ORC_AVX512_AVX_REG (tmp),
+            ORC_REG_INVALID, FALSE);
+        /* Now tmp[255:0] has 32 output bytes from second 16 input bytes */
+        /* Put into upper 256 bits of dest */
+        orc_avx512_insn_emit_vinserti32x8 (c, 1, dest->alloc, tmp,
+            dest->alloc, ORC_REG_INVALID, FALSE);
+        
+        orc_compiler_release_temp_reg (c, tmp3);
+        orc_compiler_release_temp_reg (c, tmp2);
       } else if (size >= 32) {
-        /* 32-byte output: operate on YMM (256-bit) */
+        /* 32-byte output: operate on YMM (256-bit) - need high+low+insert like AVX */
+        orc_avx512_insn_avx_emit_vpunpckhbw (c, ORC_AVX512_AVX_REG (dest->alloc),
+            ORC_AVX512_AVX_REG (dest->alloc), ORC_AVX512_AVX_REG (tmp),
+            ORC_REG_INVALID, FALSE);
         orc_avx512_insn_avx_emit_vpunpcklbw (c, ORC_AVX512_AVX_REG (dest->alloc),
             ORC_AVX512_AVX_REG (dest->alloc), ORC_AVX512_AVX_REG (dest->alloc),
             ORC_REG_INVALID, FALSE);
+        /* Insert high 128-bit lane from tmp into dest[127:0] at position 1 (upper lane) */
+        orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (dest->alloc), 
+            ORC_AVX512_AVX_REG (tmp), ORC_AVX512_AVX_REG (dest->alloc), 
+            ORC_REG_INVALID, FALSE);
       } else {
-        /* 16-byte and smaller: operate on XMM (128-bit) */
+        /* 16-byte and smaller: operate on XMM (128-bit) - only need low */
         orc_avx512_insn_sse_emit_vpunpcklbw (c, ORC_AVX512_SSE_REG (dest->alloc),
             ORC_AVX512_SSE_REG (dest->alloc), ORC_AVX512_SSE_REG (dest->alloc),
             ORC_REG_INVALID, FALSE);
@@ -532,11 +661,22 @@ orc_avx512_rule_loadupdb (OrcCompiler *c, void *user, OrcInstruction *insn)
       break;
     case 2:
       if (size >= 64) {
-        orc_avx512_insn_emit_vpunpcklwd (c, dest->alloc, dest->alloc,
+        orc_avx512_insn_emit_vmovdqa32_r_r (c, dest->alloc, tmp, ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_emit_vpunpcklwd (c, tmp, tmp,
+            dest->alloc, ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_emit_vpunpckhwd (c, tmp, tmp,
+            tmp, ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_emit_vinserti32x8 (c, 1, dest->alloc, tmp,
             dest->alloc, ORC_REG_INVALID, FALSE);
       } else if (size >= 32) {
+        orc_avx512_insn_avx_emit_vpunpckhwd (c, ORC_AVX512_AVX_REG (dest->alloc),
+            ORC_AVX512_AVX_REG (dest->alloc), ORC_AVX512_AVX_REG (tmp),
+            ORC_REG_INVALID, FALSE);
         orc_avx512_insn_avx_emit_vpunpcklwd (c, ORC_AVX512_AVX_REG (dest->alloc),
             ORC_AVX512_AVX_REG (dest->alloc), ORC_AVX512_AVX_REG (dest->alloc),
+            ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (dest->alloc), 
+            ORC_AVX512_AVX_REG (tmp), ORC_AVX512_AVX_REG (dest->alloc), 
             ORC_REG_INVALID, FALSE);
       } else {
         orc_avx512_insn_sse_emit_vpunpcklwd (c, ORC_AVX512_SSE_REG (dest->alloc),
@@ -546,11 +686,22 @@ orc_avx512_rule_loadupdb (OrcCompiler *c, void *user, OrcInstruction *insn)
       break;
     case 4:
       if (size >= 64) {
-        orc_avx512_insn_emit_vpunpckldq (c, dest->alloc, dest->alloc,
+        orc_avx512_insn_emit_vmovdqa32_r_r (c, dest->alloc, tmp, ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_emit_vpunpckldq (c, tmp, tmp,
+            dest->alloc, ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_emit_vpunpckhdq (c, tmp, tmp,
+            tmp, ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_emit_vinserti32x8 (c, 1, dest->alloc, tmp,
             dest->alloc, ORC_REG_INVALID, FALSE);
       } else if (size >= 32) {
+        orc_avx512_insn_avx_emit_vpunpckhdq (c, ORC_AVX512_AVX_REG (dest->alloc),
+            ORC_AVX512_AVX_REG (dest->alloc), ORC_AVX512_AVX_REG (tmp),
+            ORC_REG_INVALID, FALSE);
         orc_avx512_insn_avx_emit_vpunpckldq (c, ORC_AVX512_AVX_REG (dest->alloc),
             ORC_AVX512_AVX_REG (dest->alloc), ORC_AVX512_AVX_REG (dest->alloc),
+            ORC_REG_INVALID, FALSE);
+        orc_avx512_insn_avx_emit_vinserti32x4 (c, 1, ORC_AVX512_AVX_REG (dest->alloc), 
+            ORC_AVX512_AVX_REG (tmp), ORC_AVX512_AVX_REG (dest->alloc), 
             ORC_REG_INVALID, FALSE);
       } else {
         orc_avx512_insn_sse_emit_vpunpckldq (c, ORC_AVX512_SSE_REG (dest->alloc),
@@ -560,7 +711,11 @@ orc_avx512_rule_loadupdb (OrcCompiler *c, void *user, OrcInstruction *insn)
       break;
   }
 
-  src->update_type = 1;
+  if (size >= 32) {
+    orc_compiler_release_temp_reg (c, tmp);
+  }
+
+  src->update_type = ORC_VARIABLE_UPDATE_TYPE_HALF;
 }
 
 static void
