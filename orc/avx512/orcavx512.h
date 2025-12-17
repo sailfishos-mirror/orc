@@ -65,8 +65,8 @@ typedef enum _OrcAVX512Register {
   ORC_AVX512_K7,
 } OrcAVX512Register;
 
-#define ORC_AVX512_SSE_REG(i) (X86_XMM0 + (i - ORC_AVX512_ZMM0))
-#define ORC_AVX512_AVX_REG(i) (X86_YMM0 + (i - ORC_AVX512_ZMM0))
+#define ORC_AVX512_SSE_REG(i) (i == ORC_REG_INVALID ? ORC_REG_INVALID : X86_XMM0 + (i - ORC_AVX512_ZMM0))
+#define ORC_AVX512_AVX_REG(i) (i == ORC_REG_INVALID ? ORC_REG_INVALID : X86_YMM0 + (i - ORC_AVX512_ZMM0))
 
 #define ORC_AVX512_SHUF(a, b, c, d) \
   ((((a)&3) << 6) | (((b)&3) << 4) | (((c)&3) << 2) | (((d)&3) << 0))
