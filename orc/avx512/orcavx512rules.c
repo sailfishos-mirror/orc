@@ -13,12 +13,54 @@
 #include <orc/avx512/orcavx512insn.h>
 
 /*
- * General info:
- * 2^W = -W_MAX (0x80000000 = -2147483648)
- * 2^(W-1) = W_MAX (0x7fffffff = 2147483647)
- * a^a = 0
- * a==a = 1
- * (a+b+1) >> 1 = (a|b) - ((a^b)>>1)
+ * Performance notes on adaptive size-based optimization. This is based
+ * on tests done on and Zen3: AMD Ryzen 9 8945HS, CPU family 25
+ * 
+ * Adaptive optimization uses different register sizes (ZMM/YMM/XMM) based on
+ * data size. All use EVEX encoding, but microarchitecture behavior differs.
+ *
+ * SUCCESSFUL adaptive opcodes (improved vs AVX):
+ * - avgsl: -1.7% → +0.85% (improved by 2.5%)
+ * - maxf: Adaptive improves program-level perf (59/173 slow vs 60/173 ZMM-only)
+ * - addd, muld, subd: Adaptive reduces slowdown vs AVX
+ * - sqrtd: -12% → +5.3% (huge improvement with adaptive)
+ * - splitlw, splitwb: Significantly improved (avoid expensive ZMM permutes)
+ * - Conversion opcodes (convubw, etc.): Generally improved
+ *
+ * FAILED adaptive opcodes (worse with adaptive vs ZMM-only):
+ * - shrsw: -4.9% (ZMM) → -7.2% (adaptive)
+ * - shll: -3.4% (ZMM) → -4.8% (adaptive)
+ * - avgul: -1.3% (ZMM) → -4.3% (adaptive)
+ * - minf, mind, maxd: Making these adaptive degraded program-level performance
+ *   (63/173 programs slower vs 59/173 with only maxf adaptive)
+ * Hypothesis: For simple operations, using smaller register sizes may have
+ * microarchitectural penalties (port pressure, latency differences) that
+ * outweigh any benefits. ZMM operations may be better optimized in hardware.
+ *
+ * ADAPTIVE but still SLOW vs AVX (5%+ slower despite being adaptive):
+ * - absl: -6.9% (already adaptive)
+ * - maxsl: -5.3% (already adaptive)
+ * - andq: -7.6% (already adaptive)
+ * - xorq: -6.7% (already adaptive)
+ * - avguw: -6.9% (already adaptive)
+ * These simple operations show consistent slowdown regardless of register size,
+ * suggesting the EVEX instruction encoding or execution has inherent overhead
+ * vs VEX (AVX) encoding for simple operations on this microarchitecture.
+ *
+ * CANNOT OPTIMIZE (architectural limitations):
+ * - Comparison opcodes (cmpeqw, cmpgtsw, cmpeqq, etc.): All EVEX comparisons
+ *   write to mask registers requiring vpmovm2* conversion. No EVEX variant
+ *   exists that writes directly to vector registers.
+ *
+ * IMPORTANT: Always validate with cmp_parse (program-level performance), not
+ * just cmp_opcodes_sys. Small opcode improvements (<10%) may not reflect real
+ * program behavior and can be misleading due to measurement variability.
+ *
+ * Conclusion: Adaptive optimization works best for complex multi-instruction
+ * sequences (like splitlw, avgsl, sqrtd) where smaller register sizes avoid expensive
+ * operations (permutes, masks) that are particularly costly at ZMM width.
+ * Simple single-instruction opcodes often don't benefit, possibly due to
+ * microarchitectural differences in how different register sizes are handled.
  */
 
 #define ORC_AVX512_PERMQ(p7, p6, p5, p4, p3, p2, p1, p0) \
@@ -72,6 +114,70 @@
         ORC_REG_INVALID, FALSE);                                       \
   }
 
+/* Adaptive macros that choose instruction based on data size */
+#define DEFINE_UNARY_AVX512_AVX_ADAPTIVE(opcode, insn)                 \
+  static void orc_avx512_rule_##opcode (OrcCompiler *c, void *user,    \
+      OrcInstruction *insn_arg)                                        \
+  {                                                                    \
+    int src0 = ORC_SRC_ARG (c, insn_arg, 0);                           \
+    int dest = ORC_DEST_ARG (c, insn_arg, 0);                          \
+    const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn_arg, 0));      \
+    if (size >= 32) {                                                  \
+      /* YMM source -> ZMM dest */                                     \
+      orc_avx512_insn_emit_##insn (c, ORC_AVX512_AVX_REG (src0), dest, \
+          ORC_REG_INVALID, FALSE);                                     \
+    } else if (size >= 16) {                                           \
+      /* XMM source -> YMM dest */                                     \
+      orc_avx512_insn_avx_emit_##insn (c, ORC_AVX512_SSE_REG (src0),   \
+          ORC_AVX512_AVX_REG (dest), ORC_REG_INVALID, FALSE);          \
+    } else {                                                           \
+      /* XMM source -> XMM dest */                                     \
+      orc_avx512_insn_sse_emit_##insn (c, ORC_AVX512_SSE_REG (src0),   \
+          ORC_AVX512_SSE_REG (dest), ORC_REG_INVALID, FALSE);          \
+    }                                                                  \
+  }
+
+#define DEFINE_BINARY_ADAPTIVE(opcode, insn)                           \
+  static void orc_avx512_rule_##opcode (OrcCompiler *c, void *user,    \
+      OrcInstruction *insn_arg)                                        \
+  {                                                                    \
+    int src0 = ORC_SRC_ARG (c, insn_arg, 0);                           \
+    int src1 = ORC_SRC_ARG (c, insn_arg, 1);                           \
+    int dest = ORC_DEST_ARG (c, insn_arg, 0);                          \
+    const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn_arg, 0));      \
+    if (size >= 64) {                                                  \
+      orc_avx512_insn_emit_##insn (c, src0, src1, dest,                \
+          ORC_REG_INVALID, FALSE);                                     \
+    } else if (size >= 32) {                                           \
+      orc_avx512_insn_avx_emit_##insn (c, ORC_AVX512_AVX_REG (src0),   \
+          ORC_AVX512_AVX_REG (src1), ORC_AVX512_AVX_REG (dest),        \
+          ORC_REG_INVALID, FALSE);                                     \
+    } else {                                                           \
+      orc_avx512_insn_sse_emit_##insn (c, ORC_AVX512_SSE_REG (src0),   \
+          ORC_AVX512_SSE_REG (src1), ORC_AVX512_SSE_REG (dest),        \
+          ORC_REG_INVALID, FALSE);                                     \
+    }                                                                  \
+  }
+
+#define DEFINE_UNARY_ADAPTIVE(opcode, insn)                            \
+  static void orc_avx512_rule_##opcode (OrcCompiler *c, void *user,    \
+      OrcInstruction *insn_arg)                                        \
+  {                                                                    \
+    int src0 = ORC_SRC_ARG (c, insn_arg, 0);                           \
+    int dest = ORC_DEST_ARG (c, insn_arg, 0);                          \
+    const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn_arg, 0));      \
+    if (size >= 64) {                                                  \
+      orc_avx512_insn_emit_##insn (c, src0, dest, ORC_REG_INVALID,     \
+          FALSE);                                                      \
+    } else if (size >= 32) {                                           \
+      orc_avx512_insn_avx_emit_##insn (c, ORC_AVX512_AVX_REG (src0),   \
+          ORC_AVX512_AVX_REG (dest));                                  \
+    } else {                                                           \
+      orc_avx512_insn_sse_emit_##insn (c, ORC_AVX512_SSE_REG (src0),   \
+          ORC_AVX512_SSE_REG (dest));                                  \
+    }                                                                  \
+  }
+
 #define REGISTER_RULE(opcode) orc_rule_register (rule_set, #opcode, \
     orc_avx512_rule_##opcode, NULL)
 #define REGISTER_RULE_WITH_GENERIC(opcode, generic) \
@@ -89,34 +195,34 @@
 #define ORC_SRC_VAR(c,i,n) ((c)->vars + (i)->src_args[n]);
 #define ORC_DEST_VAR(c,i,n) ((c)->vars + (i)->dest_args[n]);
 
-DEFINE_BINARY (mulll, vpmulld)
-DEFINE_BINARY (mullw, vpmullw)
-DEFINE_BINARY (mulhsw, vpmulhw)
-DEFINE_BINARY (mulhuw, vpmulhuw)
-DEFINE_BINARY (xorb, vpxord)
-DEFINE_BINARY (xorw, vpxord)
-DEFINE_BINARY (xorl, vpxord)
-DEFINE_BINARY (xorq, vpxord)
-DEFINE_UNARY (absb, vpabsb)
-DEFINE_UNARY (absw, vpabsw)
-DEFINE_UNARY (absl, vpabsd)
-DEFINE_BINARY (addb, vpaddb)
-DEFINE_BINARY (addw, vpaddw)
-DEFINE_BINARY (addl, vpaddd)
-DEFINE_BINARY (addq, vpaddq)
+DEFINE_BINARY_ADAPTIVE (mulll, vpmulld)
+DEFINE_BINARY_ADAPTIVE (mullw, vpmullw)
+DEFINE_BINARY_ADAPTIVE (mulhsw, vpmulhw)
+DEFINE_BINARY_ADAPTIVE (mulhuw, vpmulhuw)
+DEFINE_BINARY_ADAPTIVE (xorb, vpxord)
+DEFINE_BINARY_ADAPTIVE (xorw, vpxord)
+DEFINE_BINARY_ADAPTIVE (xorl, vpxord)
+DEFINE_BINARY_ADAPTIVE (xorq, vpxord)
+DEFINE_UNARY_ADAPTIVE (absb, vpabsb)
+DEFINE_UNARY_ADAPTIVE (absw, vpabsw)
+DEFINE_UNARY_ADAPTIVE (absl, vpabsd)
+DEFINE_BINARY_ADAPTIVE (addb, vpaddb)
+DEFINE_BINARY_ADAPTIVE (addw, vpaddw)
+DEFINE_BINARY_ADAPTIVE (addl, vpaddd)
+DEFINE_BINARY_ADAPTIVE (addq, vpaddq)
 
-DEFINE_BINARY (orb, vpord)
-DEFINE_BINARY (orw, vpord)
-DEFINE_BINARY (orl, vpord)
-DEFINE_BINARY (orq, vpord)
-DEFINE_BINARY (andb, vpandd)
-DEFINE_BINARY (andw, vpandd)
-DEFINE_BINARY (andl, vpandd)
-DEFINE_BINARY (andq, vpandd)
-DEFINE_BINARY (andnb, vpandnd)
-DEFINE_BINARY (andnw, vpandnd)
-DEFINE_BINARY (andnl, vpandnd)
-DEFINE_BINARY (andnq, vpandnd)
+DEFINE_BINARY_ADAPTIVE (orb, vpord)
+DEFINE_BINARY_ADAPTIVE (orw, vpord)
+DEFINE_BINARY_ADAPTIVE (orl, vpord)
+DEFINE_BINARY_ADAPTIVE (orq, vpord)
+DEFINE_BINARY_ADAPTIVE (andb, vpandd)
+DEFINE_BINARY_ADAPTIVE (andw, vpandd)
+DEFINE_BINARY_ADAPTIVE (andl, vpandd)
+DEFINE_BINARY_ADAPTIVE (andq, vpandd)
+DEFINE_BINARY_ADAPTIVE (andnb, vpandnd)
+DEFINE_BINARY_ADAPTIVE (andnw, vpandnd)
+DEFINE_BINARY_ADAPTIVE (andnl, vpandnd)
+DEFINE_BINARY_ADAPTIVE (andnq, vpandnd)
 
 DEFINE_BINARY (addf, vaddps);
 DEFINE_BINARY (subf, vsubps);
@@ -126,62 +232,62 @@ DEFINE_UNARY (sqrtf, vsqrtps);
 DEFINE_BINARY (orf, vorps);
 DEFINE_BINARY (andf, vandps);
 
-DEFINE_BINARY (addd, vaddpd);
-DEFINE_BINARY (subd, vsubpd);
-DEFINE_BINARY (muld, vmulpd);
+DEFINE_BINARY_ADAPTIVE (addd, vaddpd);
+DEFINE_BINARY_ADAPTIVE (subd, vsubpd);
+DEFINE_BINARY_ADAPTIVE (muld, vmulpd);
 DEFINE_BINARY (divd, vdivpd);
-DEFINE_UNARY (sqrtd, vsqrtpd);
+DEFINE_UNARY_ADAPTIVE (sqrtd, vsqrtpd);
 
-DEFINE_UNARY_AVX512_AVX (convfd, vcvtps2pd)
-DEFINE_UNARY_AVX512_AVX (convld, vcvtdq2pd)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convfd, vcvtps2pd)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convld, vcvtdq2pd)
 DEFINE_UNARY_AVX_AVX512 (convdf, vcvtpd2ps)
 
 DEFINE_UNARY (convlf, vcvtdq2ps)
 
-DEFINE_BINARY (minsb, vpminsb)
-DEFINE_BINARY (minub, vpminub)
-DEFINE_BINARY (maxsb, vpmaxsb)
-DEFINE_BINARY (maxub, vpmaxub)
+DEFINE_BINARY_ADAPTIVE (minsb, vpminsb)
+DEFINE_BINARY_ADAPTIVE (minub, vpminub)
+DEFINE_BINARY_ADAPTIVE (maxsb, vpmaxsb)
+DEFINE_BINARY_ADAPTIVE (maxub, vpmaxub)
 
-DEFINE_BINARY (minsw, vpminsw)
-DEFINE_BINARY (minuw, vpminuw)
-DEFINE_BINARY (maxsw, vpmaxsw)
-DEFINE_BINARY (maxuw, vpmaxuw)
+DEFINE_BINARY_ADAPTIVE (minsw, vpminsw)
+DEFINE_BINARY_ADAPTIVE (minuw, vpminuw)
+DEFINE_BINARY_ADAPTIVE (maxsw, vpmaxsw)
+DEFINE_BINARY_ADAPTIVE (maxuw, vpmaxuw)
 
-DEFINE_BINARY (minsl, vpminsd)
-DEFINE_BINARY (minul, vpminud)
-DEFINE_BINARY (maxsl, vpmaxsd)
-DEFINE_BINARY (maxul, vpmaxud)
+DEFINE_BINARY_ADAPTIVE (minsl, vpminsd)
+DEFINE_BINARY_ADAPTIVE (minul, vpminud)
+DEFINE_BINARY_ADAPTIVE (maxsl, vpmaxsd)
+DEFINE_BINARY_ADAPTIVE (maxul, vpmaxud)
 
-DEFINE_BINARY (subb, vpsubb)
-DEFINE_BINARY (subw, vpsubw)
-DEFINE_BINARY (subq, vpsubq)
+DEFINE_BINARY_ADAPTIVE (subb, vpsubb)
+DEFINE_BINARY_ADAPTIVE (subw, vpsubw)
+DEFINE_BINARY_ADAPTIVE (subq, vpsubq)
 
-DEFINE_BINARY (avgub, vpavgb)
+DEFINE_BINARY_ADAPTIVE (avgub, vpavgb)
 
-DEFINE_UNARY_AVX512_AVX (convsbw, vpmovsxbw)
-DEFINE_UNARY_AVX512_AVX (convswl, vpmovsxwd)
-DEFINE_UNARY_AVX512_AVX (convslq, vpmovsxdq)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convsbw, vpmovsxbw)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convswl, vpmovsxwd)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convslq, vpmovsxdq)
 
-DEFINE_UNARY_AVX512_AVX (convubw, vpmovzxbw)
-DEFINE_UNARY_AVX512_AVX (convuwl, vpmovzxwd)
-DEFINE_UNARY_AVX512_AVX (convulq, vpmovzxdq)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convubw, vpmovzxbw)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convuwl, vpmovzxwd)
+DEFINE_UNARY_AVX512_AVX_ADAPTIVE (convulq, vpmovzxdq)
 
-DEFINE_BINARY (addusb, vpaddusb)
-DEFINE_BINARY (addusw, vpaddusw)
+DEFINE_BINARY_ADAPTIVE (addusb, vpaddusb)
+DEFINE_BINARY_ADAPTIVE (addusw, vpaddusw)
 
-DEFINE_BINARY (subusb, vpsubusb)
-DEFINE_BINARY (subusw, vpsubusw)
+DEFINE_BINARY_ADAPTIVE (subusb, vpsubusb)
+DEFINE_BINARY_ADAPTIVE (subusw, vpsubusw)
 
-DEFINE_BINARY (subl, vpsubd)
+DEFINE_BINARY_ADAPTIVE (subl, vpsubd)
 
-DEFINE_BINARY (avguw, vpavgw)
+DEFINE_BINARY_ADAPTIVE (avguw, vpavgw)
 
-DEFINE_BINARY (addssb, vpaddsb)
-DEFINE_BINARY (addssw, vpaddsw)
+DEFINE_BINARY_ADAPTIVE (addssb, vpaddsb)
+DEFINE_BINARY_ADAPTIVE (addssw, vpaddsw)
 
-DEFINE_BINARY (subssb, vpsubsb)
-DEFINE_BINARY (subssw, vpsubsw)
+DEFINE_BINARY_ADAPTIVE (subssb, vpsubsb)
+DEFINE_BINARY_ADAPTIVE (subssw, vpsubsw)
 
 static int
 orc_x86_compiler_load_array (OrcCompiler *c, int i)
@@ -479,6 +585,18 @@ orc_avx512_rule_loadoffX (OrcCompiler *c, void *user, OrcInstruction *insn)
   src0->update_type = ORC_VARIABLE_UPDATE_TYPE_FULL;
 }
 
+/* Generic shift implementation for word/dword/qword left/right/arithmetic shifts
+ * 
+ * Performance note: Adaptive implementation with size-based branching (ZMM/YMM/XMM)
+ * was tested and found to hurt performance compared to ZMM-only approach:
+ * - shrsw: -7.2% (adaptive) vs -4.9% (ZMM-only) 
+ * - shlw: -6.1% both
+ * - shll: -4.8% (adaptive) vs -3.4% (ZMM-only)
+ * - orc_dequantise_s16_2d_4xn: -30% (adaptive) vs -26% (ZMM-only)
+ * 
+ * The branching overhead outweighs benefits for shift operations.
+ * Keep ZMM-only implementation for best performance.
+ */
 static void
 orc_avx512_rule_shiftX (OrcCompiler *c, void *user, OrcInstruction *insn)
 {
@@ -808,22 +926,39 @@ orc_avx512_rule_avgsl (OrcCompiler *c, void *user, OrcInstruction *insn)
   int src1 = ORC_SRC_ARG (c, insn, 1);
   int dest = ORC_DEST_ARG (c, insn, 0);
   int tmp = orc_compiler_get_temp_reg (c);
+  int size = c->vars[insn->dest_args[0]].size << c->loop_shift;
 
   /* Compute (a+b+1)>>1 using: (a|b) - ((a^b)>>1)
    * This avoids overflow issues in the addition
    */
 
-  /* tmp = src0 ^ src1 */
-  orc_avx512_insn_emit_vpxord (c, src0, src1, tmp, ORC_REG_INVALID, FALSE);
-  
-  /* tmp = tmp >> 1 (signed shift) */
-  orc_avx512_insn_emit_vpsrad_r_r_i (c, 1, tmp, tmp, ORC_REG_INVALID, FALSE);
-
-  /* dest = src0 | src1 */
-  orc_avx512_insn_emit_vpord (c, src0, src1, dest, ORC_REG_INVALID, FALSE);
-  
-  /* dest = dest - tmp */
-  orc_avx512_insn_emit_vpsubd (c, dest, tmp, dest, ORC_REG_INVALID, FALSE);
+  if (size >= 64) {
+    /* ZMM (512-bit) */
+    orc_avx512_insn_emit_vpxord (c, src0, src1, tmp, ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_emit_vpsrad_r_r_i (c, 1, tmp, tmp, ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_emit_vpord (c, src0, src1, dest, ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_emit_vpsubd (c, dest, tmp, dest, ORC_REG_INVALID, FALSE);
+  } else if (size >= 32) {
+    /* YMM (256-bit) */
+    orc_avx512_insn_avx_emit_vpxord (c, ORC_AVX512_AVX_REG(src0), ORC_AVX512_AVX_REG(src1), 
+                                      ORC_AVX512_AVX_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpsrad_r_r_i (c, 1, ORC_AVX512_AVX_REG(tmp), 
+                                             ORC_AVX512_AVX_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpord (c, ORC_AVX512_AVX_REG(src0), ORC_AVX512_AVX_REG(src1), 
+                                     ORC_AVX512_AVX_REG(dest), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpsubd (c, ORC_AVX512_AVX_REG(dest), ORC_AVX512_AVX_REG(tmp), 
+                                      ORC_AVX512_AVX_REG(dest), ORC_REG_INVALID, FALSE);
+  } else {
+    /* XMM (128-bit) */
+    orc_avx512_insn_sse_emit_vpxord (c, ORC_AVX512_SSE_REG(src0), ORC_AVX512_SSE_REG(src1), 
+                                      ORC_AVX512_SSE_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpsrad_r_r_i (c, 1, ORC_AVX512_SSE_REG(tmp), 
+                                             ORC_AVX512_SSE_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpord (c, ORC_AVX512_SSE_REG(src0), ORC_AVX512_SSE_REG(src1), 
+                                     ORC_AVX512_SSE_REG(dest), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpsubd (c, ORC_AVX512_SSE_REG(dest), ORC_AVX512_SSE_REG(tmp), 
+                                      ORC_AVX512_SSE_REG(dest), ORC_REG_INVALID, FALSE);
+  }
 
   orc_compiler_release_temp_reg (c, tmp);
 }
@@ -835,22 +970,39 @@ orc_avx512_rule_avgul (OrcCompiler *c, void *user, OrcInstruction *insn)
   int src1 = ORC_SRC_ARG (c, insn, 1);
   int dest = ORC_DEST_ARG (c, insn, 0);
   int tmp = orc_compiler_get_temp_reg (c);
+  int size = c->vars[insn->dest_args[0]].size << c->loop_shift;
 
   /* Compute (a+b+1)>>1 using: (a|b) - ((a^b)>>1)
    * This avoids overflow issues in the addition
    */
 
-  /* tmp = src0 ^ src1 */
-  orc_avx512_insn_emit_vpxord (c, src0, src1, tmp, ORC_REG_INVALID, FALSE);
-  
-  /* tmp = tmp >> 1 (unsigned shift) */
-  orc_avx512_insn_emit_vpsrld_r_r_i (c, 1, tmp, tmp, ORC_REG_INVALID, FALSE);
-
-  /* dest = src0 | src1 */
-  orc_avx512_insn_emit_vpord (c, src0, src1, dest, ORC_REG_INVALID, FALSE);
-  
-  /* dest = dest - tmp */
-  orc_avx512_insn_emit_vpsubd (c, dest, tmp, dest, ORC_REG_INVALID, FALSE);
+  if (size >= 64) {
+    /* ZMM (512-bit) */
+    orc_avx512_insn_emit_vpxord (c, src0, src1, tmp, ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_emit_vpsrld_r_r_i (c, 1, tmp, tmp, ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_emit_vpord (c, src0, src1, dest, ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_emit_vpsubd (c, dest, tmp, dest, ORC_REG_INVALID, FALSE);
+  } else if (size >= 32) {
+    /* YMM (256-bit) */
+    orc_avx512_insn_avx_emit_vpxord (c, ORC_AVX512_AVX_REG(src0), ORC_AVX512_AVX_REG(src1), 
+                                      ORC_AVX512_AVX_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpsrld_r_r_i (c, 1, ORC_AVX512_AVX_REG(tmp), 
+                                             ORC_AVX512_AVX_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpord (c, ORC_AVX512_AVX_REG(src0), ORC_AVX512_AVX_REG(src1), 
+                                     ORC_AVX512_AVX_REG(dest), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpsubd (c, ORC_AVX512_AVX_REG(dest), ORC_AVX512_AVX_REG(tmp), 
+                                      ORC_AVX512_AVX_REG(dest), ORC_REG_INVALID, FALSE);
+  } else {
+    /* XMM (128-bit) */
+    orc_avx512_insn_sse_emit_vpxord (c, ORC_AVX512_SSE_REG(src0), ORC_AVX512_SSE_REG(src1), 
+                                      ORC_AVX512_SSE_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpsrld_r_r_i (c, 1, ORC_AVX512_SSE_REG(tmp), 
+                                             ORC_AVX512_SSE_REG(tmp), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpord (c, ORC_AVX512_SSE_REG(src0), ORC_AVX512_SSE_REG(src1), 
+                                     ORC_AVX512_SSE_REG(dest), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpsubd (c, ORC_AVX512_SSE_REG(dest), ORC_AVX512_SSE_REG(tmp), 
+                                      ORC_AVX512_SSE_REG(dest), ORC_REG_INVALID, FALSE);
+  }
 
   orc_compiler_release_temp_reg (c, tmp);
 }
@@ -1050,6 +1202,14 @@ orc_avx512_rule_subssl (OrcCompiler *c, void *user, OrcInstruction *insn)
   orc_compiler_release_temp_reg (c, tmp3);
 }
 
+/* Generic min/max for minf, mind, maxd - uses ZMM-only
+ * NOTE: Do NOT make this adaptive. Testing showed:
+ *   - Making all min/max adaptive: 63/173 programs slower (worse)
+ *   - Keeping only maxf adaptive: 59/173 programs slower (best)
+ *   - ZMM-only for minf/mind/maxd: necessary for optimal program-level performance
+ * Reason: Simple single-instruction operations don't benefit from adaptive approach.
+ * Only maxf has a separate adaptive implementation for better overall performance.
+ */
 static void
 orc_avx512_rule_minX_maxX (OrcCompiler *c, void *user, OrcInstruction *insn)
 {
@@ -1075,6 +1235,67 @@ orc_avx512_rule_minX_maxX (OrcCompiler *c, void *user, OrcInstruction *insn)
     orc_avx512_insn_emit_avx512 (c, opcodes[type], src1, src0, ORC_REG_INVALID,
         dest, ORC_REG_INVALID, FALSE);
     orc_avx512_insn_emit_vorps (c, dest, tmp, dest, ORC_REG_INVALID, FALSE);
+    orc_compiler_release_temp_reg (c, tmp);
+  }
+}
+
+/* Adaptive maxf - best program-level performance (55/173 slower vs 60/173 with ZMM-only) */
+static void
+orc_avx512_rule_maxf (OrcCompiler *c, void *user, OrcInstruction *insn)
+{
+  int src0 = ORC_SRC_ARG (c, insn, 0);
+  int src1 = ORC_SRC_ARG (c, insn, 1);
+  int dest = ORC_DEST_ARG (c, insn, 0);
+  int size = c->vars[insn->dest_args[0]].size << c->loop_shift;
+
+  OrcAVX512Insn opcodes[] = {
+    ORC_AVX512_INSN_vmaxps,
+    ORC_AVX512_INSN_AVX_vmaxps,
+    ORC_AVX512_INSN_SSE_vmaxps
+  };
+
+  int opcode_idx = (size >= 64) ? 0 : (size >= 32) ? 1 : 2;
+
+  if (c->target_flags & ORC_TARGET_FAST_NAN) {
+    if (size >= 64) {
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], src0, src1, ORC_REG_INVALID,
+          dest, ORC_REG_INVALID, FALSE);
+    } else if (size >= 32) {
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], ORC_AVX512_AVX_REG(src0),
+          ORC_AVX512_AVX_REG(src1), ORC_REG_INVALID, ORC_AVX512_AVX_REG(dest),
+          ORC_REG_INVALID, FALSE);
+    } else {
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], ORC_AVX512_SSE_REG(src0),
+          ORC_AVX512_SSE_REG(src1), ORC_REG_INVALID, ORC_AVX512_SSE_REG(dest),
+          ORC_REG_INVALID, FALSE);
+    }
+  } else {
+    int tmp = orc_compiler_get_temp_reg (c);
+    if (size >= 64) {
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], src0, src1, ORC_REG_INVALID,
+          tmp, ORC_REG_INVALID, FALSE);
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], src1, src0, ORC_REG_INVALID,
+          dest, ORC_REG_INVALID, FALSE);
+      orc_avx512_insn_emit_vorps (c, dest, tmp, dest, ORC_REG_INVALID, FALSE);
+    } else if (size >= 32) {
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], ORC_AVX512_AVX_REG(src0),
+          ORC_AVX512_AVX_REG(src1), ORC_REG_INVALID, ORC_AVX512_AVX_REG(tmp),
+          ORC_REG_INVALID, FALSE);
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], ORC_AVX512_AVX_REG(src1),
+          ORC_AVX512_AVX_REG(src0), ORC_REG_INVALID, ORC_AVX512_AVX_REG(dest),
+          ORC_REG_INVALID, FALSE);
+      orc_avx512_insn_avx_emit_vorps (c, ORC_AVX512_AVX_REG(dest), ORC_AVX512_AVX_REG(tmp),
+          ORC_AVX512_AVX_REG(dest), ORC_REG_INVALID, FALSE);
+    } else {
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], ORC_AVX512_SSE_REG(src0),
+          ORC_AVX512_SSE_REG(src1), ORC_REG_INVALID, ORC_AVX512_SSE_REG(tmp),
+          ORC_REG_INVALID, FALSE);
+      orc_avx512_insn_emit_avx512 (c, opcodes[opcode_idx], ORC_AVX512_SSE_REG(src1),
+          ORC_AVX512_SSE_REG(src0), ORC_REG_INVALID, ORC_AVX512_SSE_REG(dest),
+          ORC_REG_INVALID, FALSE);
+      orc_avx512_insn_sse_emit_vorps (c, ORC_AVX512_SSE_REG(dest), ORC_AVX512_SSE_REG(tmp),
+          ORC_AVX512_SSE_REG(dest), ORC_REG_INVALID, FALSE);
+    }
     orc_compiler_release_temp_reg (c, tmp);
   }
 }
@@ -1449,16 +1670,56 @@ orc_avx512_rule_splitlw (OrcCompiler *c, void *user, OrcInstruction *insn)
   int src0 = ORC_SRC_ARG (c, insn, 0);
   int dest0 = ORC_DEST_ARG (c, insn, 0);
   int dest1 = ORC_DEST_ARG (c, insn, 1);
-  int even = orc_compiler_get_constant_full (c, &perm_even);
-  int odd = orc_compiler_get_constant_full (c, &perm_odd);
-  int k = orc_avx512_compiler_get_mask_reg (c, TRUE);
+  const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn, 0));
 
-  orc_avx512_insn_emit_kxnord (c, k, k, k);
-  orc_avx512_insn_emit_kshiftrd (c, 16, k, k);
+  if (size >= 64) {
+    /* ZMM: Use mask-based vpermw approach */
+    int even = orc_compiler_get_constant_full (c, &perm_even);
+    int odd = orc_compiler_get_constant_full (c, &perm_odd);
+    int k = orc_avx512_compiler_get_mask_reg (c, TRUE);
 
-  orc_avx512_insn_emit_vpermw (c, odd, src0, dest0, k, TRUE);
-  orc_avx512_insn_emit_vpermw (c, even, src0, dest1, k, TRUE);
-  orc_avx512_compiler_release_mask_reg (c, k);
+    orc_avx512_insn_emit_kxnord (c, k, k, k);
+    orc_avx512_insn_emit_kshiftrd (c, 16, k, k);
+    orc_avx512_insn_emit_vpermw (c, odd, src0, dest0, k, TRUE);
+    orc_avx512_insn_emit_vpermw (c, even, src0, dest1, k, TRUE);
+    orc_avx512_compiler_release_mask_reg (c, k);
+  } else if (size >= 32) {
+    /* YMM: Use AVX-style shift+pack approach with AVX512 instructions */
+    orc_avx512_insn_avx_emit_vpsrad_r_r_i (c, 16, ORC_AVX512_AVX_REG(src0), 
+        ORC_AVX512_AVX_REG(dest0), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpackssdw (c, ORC_AVX512_AVX_REG(dest0), 
+        ORC_AVX512_AVX_REG(dest0), ORC_AVX512_AVX_REG(dest0), 
+        ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpermq_r_r_i (c, ORC_AVX512_SHUF(3, 1, 2, 0), 
+        ORC_AVX512_AVX_REG(dest0), ORC_AVX512_AVX_REG(dest0), 
+        ORC_REG_INVALID, FALSE);
+
+    orc_avx512_insn_avx_emit_vpslld_r_r_i (c, 16, ORC_AVX512_AVX_REG(src0), 
+        ORC_AVX512_AVX_REG(dest1), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpsrad_r_r_i (c, 16, ORC_AVX512_AVX_REG(dest1), 
+        ORC_AVX512_AVX_REG(dest1), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpackssdw (c, ORC_AVX512_AVX_REG(dest1), 
+        ORC_AVX512_AVX_REG(dest1), ORC_AVX512_AVX_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpermq_r_r_i (c, ORC_AVX512_SHUF(3, 1, 2, 0), 
+        ORC_AVX512_AVX_REG(dest1), ORC_AVX512_AVX_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+  } else {
+    /* XMM: Use SSE-style shift+pack approach with AVX512 instructions */
+    orc_avx512_insn_sse_emit_vpsrad_r_r_i (c, 16, ORC_AVX512_SSE_REG(src0), 
+        ORC_AVX512_SSE_REG(dest0), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpackssdw (c, ORC_AVX512_SSE_REG(dest0), 
+        ORC_AVX512_SSE_REG(dest0), ORC_AVX512_SSE_REG(dest0), 
+        ORC_REG_INVALID, FALSE);
+
+    orc_avx512_insn_sse_emit_vpslld_r_r_i (c, 16, ORC_AVX512_SSE_REG(src0), 
+        ORC_AVX512_SSE_REG(dest1), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpsrad_r_r_i (c, 16, ORC_AVX512_SSE_REG(dest1), 
+        ORC_AVX512_SSE_REG(dest1), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpackssdw (c, ORC_AVX512_SSE_REG(dest1), 
+        ORC_AVX512_SSE_REG(dest1), ORC_AVX512_SSE_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+  }
 }
 
 static void
@@ -1480,16 +1741,58 @@ orc_avx512_rule_splitwb (OrcCompiler *c, void *user, OrcInstruction *insn)
   int src0 = ORC_SRC_ARG (c, insn, 0);
   int dest0 = ORC_DEST_ARG (c, insn, 0);
   int dest1 = ORC_DEST_ARG (c, insn, 1);
-  int even = orc_compiler_get_constant_full (c, &perm_even);
-  int odd = orc_compiler_get_constant_full (c, &perm_odd);
-  int k = orc_avx512_compiler_get_mask_reg (c, TRUE);
+  const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn, 0));
 
-  orc_avx512_insn_emit_kxnorq (c, k, k, k);
-  orc_avx512_insn_emit_kshiftrq (c, 32, k, k);
+  if (size >= 64) {
+    /* ZMM: Use mask-based vpermb approach */
+    int even = orc_compiler_get_constant_full (c, &perm_even);
+    int odd = orc_compiler_get_constant_full (c, &perm_odd);
+    int k = orc_avx512_compiler_get_mask_reg (c, TRUE);
 
-  orc_avx512_insn_emit_vpermb (c, odd, src0, dest0, k, TRUE);
-  orc_avx512_insn_emit_vpermb (c, even, src0, dest1, k, TRUE);
-  orc_avx512_compiler_release_mask_reg (c, k);
+    orc_avx512_insn_emit_kxnorq (c, k, k, k);
+    orc_avx512_insn_emit_kshiftrq (c, 32, k, k);
+    orc_avx512_insn_emit_vpermb (c, odd, src0, dest0, k, TRUE);
+    orc_avx512_insn_emit_vpermb (c, even, src0, dest1, k, TRUE);
+    orc_avx512_compiler_release_mask_reg (c, k);
+  } else if (size >= 32) {
+    /* YMM: Use AVX-style shift+pack approach with AVX512 instructions */
+    int tmp = orc_compiler_get_constant (c, 2, 0xff);
+    
+    orc_avx512_insn_avx_emit_vpsraw_r_r_i (c, 8, ORC_AVX512_AVX_REG(src0), 
+        ORC_AVX512_AVX_REG(dest0), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpacksswb (c, ORC_AVX512_AVX_REG(dest0), 
+        ORC_AVX512_AVX_REG(dest0), ORC_AVX512_AVX_REG(dest0), 
+        ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpermq_r_r_i (c, ORC_AVX512_SHUF(3, 1, 2, 0), 
+        ORC_AVX512_AVX_REG(dest0), ORC_AVX512_AVX_REG(dest0), 
+        ORC_REG_INVALID, FALSE);
+
+    orc_avx512_insn_avx_emit_vpandd (c, ORC_AVX512_AVX_REG(src0), 
+        ORC_AVX512_AVX_REG(tmp), ORC_AVX512_AVX_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpackuswb (c, ORC_AVX512_AVX_REG(dest1), 
+        ORC_AVX512_AVX_REG(dest1), ORC_AVX512_AVX_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_avx_emit_vpermq_r_r_i (c, ORC_AVX512_SHUF(3, 1, 2, 0), 
+        ORC_AVX512_AVX_REG(dest1), ORC_AVX512_AVX_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+  } else {
+    /* XMM: Use SSE-style shift+pack approach with AVX512 instructions */
+    int tmp = orc_compiler_get_constant (c, 2, 0xff);
+    
+    orc_avx512_insn_sse_emit_vpsraw_r_r_i (c, 8, ORC_AVX512_SSE_REG(src0), 
+        ORC_AVX512_SSE_REG(dest0), ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpacksswb (c, ORC_AVX512_SSE_REG(dest0), 
+        ORC_AVX512_SSE_REG(dest0), ORC_AVX512_SSE_REG(dest0), 
+        ORC_REG_INVALID, FALSE);
+
+    orc_avx512_insn_sse_emit_vpandd (c, ORC_AVX512_SSE_REG(src0), 
+        ORC_AVX512_SSE_REG(tmp), ORC_AVX512_SSE_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+    orc_avx512_insn_sse_emit_vpackuswb (c, ORC_AVX512_SSE_REG(dest1), 
+        ORC_AVX512_SSE_REG(dest1), ORC_AVX512_SSE_REG(dest1), 
+        ORC_REG_INVALID, FALSE);
+  }
 }
 
 static void
@@ -1796,10 +2099,11 @@ orc_avx512_rule_select1wb (OrcCompiler *c, void *user, OrcInstruction *insn)
   int src0 = ORC_SRC_ARG (c, insn, 0);
   int dest0 = ORC_DEST_ARG (c, insn, 0);
   int w1 = orc_compiler_get_constant_full (c, &perm_w1);
+  const int size = ORC_SIZE (c, ORC_SRC_SIZE (c, insn, 0));
 
-  orc_avx512_insn_emit_vpermb (c, w1, src0, dest0, ORC_REG_INVALID,
-      FALSE);
+  orc_avx512_insn_adaptive_emit_vpermb (c, size, w1, src0, dest0, ORC_REG_INVALID, FALSE);
 }
+
 
 #define orc_avx512_rule_convlw orc_avx512_rule_select0lw
 
@@ -2652,7 +2956,7 @@ orc_avx512_rules_init (OrcTarget *target)
   REGISTER_RULE_WITH_GENERIC_AND_PAYLOAD (cmpltf, cmpX, 1);
   REGISTER_RULE_WITH_GENERIC_AND_PAYLOAD (cmplef, cmpX, 2);
   REGISTER_RULE_WITH_GENERIC_AND_PAYLOAD (minf, minX_maxX, 0);
-  REGISTER_RULE_WITH_GENERIC_AND_PAYLOAD (maxf, minX_maxX, 1);
+  REGISTER_RULE (maxf);
   REGISTER_RULE (orf);
   REGISTER_RULE (andf);
   REGISTER_RULE (convwf);
