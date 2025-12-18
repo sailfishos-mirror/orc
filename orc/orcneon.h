@@ -9,8 +9,8 @@ ORC_BEGIN_DECLS
 
 #ifdef ORC_ENABLE_UNSTABLE_API
 
-ORC_API const char *orc_neon_reg_name (int reg);
-ORC_API const char *orc_neon_reg_name_quad (int reg);
+ORC_API const char *orc_neon32_reg_name (int reg);
+ORC_API const char *orc_neon32_reg_name_quad (int reg);
 
 ORC_API const char *orc_neon64_reg_name_vector (int reg, int size, int quad);
 

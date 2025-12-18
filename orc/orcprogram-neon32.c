@@ -363,8 +363,8 @@ orc_neon32_save_accumulators (OrcCompiler *compiler)
           case 2:
             if (compiler->loop_shift > 0) {
               ORC_ASM_CODE(compiler,"  vpaddl.u16 %s, %s\n",
-                  orc_neon_reg_name (src),
-                  orc_neon_reg_name (src));
+                  orc_neon32_reg_name (src),
+                  orc_neon32_reg_name (src));
               code = 0xf3b40280;
               code |= (src&0xf) << 12;
               code |= ((src>>4)&0x1) << 22;
@@ -372,8 +372,8 @@ orc_neon32_save_accumulators (OrcCompiler *compiler)
               orc_arm_emit (compiler, code);
 
               ORC_ASM_CODE(compiler,"  vpaddl.u32 %s, %s\n",
-                  orc_neon_reg_name (src),
-                  orc_neon_reg_name (src));
+                  orc_neon32_reg_name (src),
+                  orc_neon32_reg_name (src));
               code = 0xf3b80280;
               code |= (src&0xf) << 12;
               code |= ((src>>4)&0x1) << 22;
@@ -382,7 +382,7 @@ orc_neon32_save_accumulators (OrcCompiler *compiler)
             }
 
             ORC_ASM_CODE(compiler,"  vst1.16 %s[%d], [%s]\n",
-                orc_neon_reg_name (src), 0,
+                orc_neon32_reg_name (src), 0,
                 orc_arm_reg_name (compiler->gp_tmpreg));
             code = 0xf480040f;
             code |= (compiler->gp_tmpreg&0xf) << 16;
@@ -393,15 +393,15 @@ orc_neon32_save_accumulators (OrcCompiler *compiler)
           case 4:
             if (compiler->loop_shift > 0) {
               ORC_ASM_CODE(compiler,"  vpadd.u32 %s, %s, %s\n",
-                  orc_neon_reg_name (src),
-                  orc_neon_reg_name (src),
-                  orc_neon_reg_name (src));
+                  orc_neon32_reg_name (src),
+                  orc_neon32_reg_name (src),
+                  orc_neon32_reg_name (src));
               code = NEON_BINARY(0xf2200b10, src, src, src);
               orc_arm_emit (compiler, code);
             }
 
             ORC_ASM_CODE(compiler,"  vst1.32 %s[%d], [%s]\n",
-                orc_neon_reg_name (src), 0,
+                orc_neon32_reg_name (src), 0,
                 orc_arm_reg_name (compiler->gp_tmpreg));
             code = 0xf480080f;
             code |= (compiler->gp_tmpreg&0xf) << 16;
