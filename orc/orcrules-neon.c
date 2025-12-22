@@ -138,15 +138,6 @@ orc_neon_binary_vfp_rule (OrcCompiler *p, void *user, OrcInstruction *insn)
     orc_neon32_binary_vfp_rule (p, (void *)insn32, insn);
 }
 
-void
-orc_neon_emit_loadil (OrcCompiler *compiler, OrcVariable *dest, int value)
-{
-  if (compiler->is_64bit)
-    orc_neon64_emit_loadil (compiler, dest, value);
-  else
-    orc_neon32_emit_loadil (compiler, dest, value);
-}
-
 static void
 orc_neon_rule_loadupdb (OrcCompiler *compiler, void *user, OrcInstruction *insn)
 {

@@ -590,7 +590,7 @@ orc_neon64_load_constants_outer (OrcCompiler *compiler)
     if (compiler->vars[i].name == NULL) continue;
     if (compiler->vars[i].vartype != ORC_VAR_TYPE_ACCUMULATOR) continue;
 
-    orc_neon_emit_loadil (compiler, &(compiler->vars[i]), 0);
+    orc_neon64_emit_loadil (compiler, &(compiler->vars[i]), 0);
   }
 
   orc_compiler_emit_invariants (compiler);
