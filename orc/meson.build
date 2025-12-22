@@ -92,6 +92,8 @@ if 'neon' in enabled_targets
     'orcprogram-neon32.c',
     'orcprogram-neon64.c',
     'orcrules-neon.c',
+    'orcrules-neon32.c',
+    'orcrules-neon64.c',
     'orcarm.c',
     'orcarminsn.c',
     'orcarm64insn.c',
