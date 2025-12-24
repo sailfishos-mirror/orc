@@ -405,12 +405,13 @@ pages:
   interruptible: false
   before_script:
     - apt update
-    - apt-get install --yes meson ninja-build build-essential gtk-doc-tools
+    - apt-get install --yes meson ninja-build build-essential python3-pip python3-setuptools python3-wheel
+    - pip3 install hotdoc --break-system-packages
   script:
-    - meson -Dgtk_doc=enabled b
-    - ninja -C b orc-doc
+    - meson -Dhotdoc=enabled b
+    - ninja -C b
     - mkdir -p public/docs/latest/
-    - mv b/doc/html/* public/docs/latest/
+    - mv b/doc/built_doc/* public/docs/latest/
     - ls -R1 public
   artifacts:
     paths:
