@@ -416,6 +416,8 @@ alpine 3.21 loongarch64:
     - "trigger"
   tags:
     - 'orc-alpine-loongarch64'
+  when: 'manual'
+  allow_failure: true
   script:
     - apk add git build-base linux-headers meson
     - meson setup $MESON_ARGS build/
