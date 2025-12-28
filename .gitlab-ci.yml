@@ -484,6 +484,7 @@ pages:
   stage: 'deploy'
   interruptible: false
   when: 'manual'
+  needs: []
   rules:
     # This ensures that only pushes to the default branch will trigger
     # a pages deploy
