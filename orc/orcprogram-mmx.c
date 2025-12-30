@@ -142,26 +142,6 @@ mmx_use_long_jumps (int flags)
   }
 }
 
-static int
-mmx_loop_shift (int max_var_size)
-{
-  switch (max_var_size) {
-    case 1:
-      return 3;
-    case 2:
-      return 2;
-    case 4:
-      return 1;
-    case 8:
-      return 0;
-    default:
-      ORC_ERROR ("unhandled max var size %d", max_var_size);
-      break;
-  }
-
-  return -1;
-}
-
 static void
 mmx_init_accumulator (OrcCompiler *compiler, OrcVariable *var)
 {
@@ -406,7 +386,6 @@ orc_mmx_init (void)
     mmx_is_64bit,
     mmx_use_frame_pointer,
     mmx_use_long_jumps,
-    mmx_loop_shift,
     mmx_init_accumulator,
     mmx_reduce_accumulator,
     NULL,

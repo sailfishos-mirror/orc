@@ -122,28 +122,6 @@ orc_avx512_target_use_long_jumps (int flags)
   }
 }
 
-/* How many elements of max_var_size can fit in a register
- * It is in the form of (2^ret)*(max_var_size*8) = reg_size */
-static int
-orc_avx512_target_loop_shift (int max_var_size)
-{
-  switch (max_var_size) {
-    case 1:
-      return 6;
-    case 2:
-      return 5;
-    case 4:
-      return 4;
-    case 8:
-      return 3;
-    default:
-      ORC_ERROR ("unhandled max var size %d", max_var_size);
-      break;
-  }
-
-  return -1;
-}
-
 static void
 orc_avx512_target_init_accumulator (OrcCompiler *c, OrcVariable *var)
 {
@@ -396,7 +374,6 @@ orc_avx512_target_init (void)
     orc_avx512_target_is_64bit,
     orc_avx512_target_use_frame_pointer,
     orc_avx512_target_use_long_jumps,
-    orc_avx512_target_loop_shift,
     orc_avx512_target_init_accumulator,
     orc_avx512_target_reduce_accumulator,
     NULL,

@@ -140,26 +140,6 @@ avx_use_long_jumps (int flags)
   }
 }
 
-static int
-avx_loop_shift (int max_var_size)
-{
-  switch (max_var_size) {
-    case 1:
-      return 5;
-    case 2:
-      return 4;
-    case 4:
-      return 3;
-    case 8:
-      return 2;
-    default:
-      ORC_ERROR ("unhandled max var size %d", max_var_size);
-      break;
-  }
-
-  return -1;
-}
-
 static void
 avx_init_accumulator (OrcCompiler *compiler, OrcVariable *var)
 {
@@ -487,7 +467,6 @@ orc_avx_init (void)
     avx_is_64bit,
     avx_use_frame_pointer,
     avx_use_long_jumps,
-    avx_loop_shift,
     avx_init_accumulator,
     avx_reduce_accumulator,
     NULL,

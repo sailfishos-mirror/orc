@@ -71,3 +71,4 @@ orc_variable_get_shift (const OrcVariable *v, int *shift)
       return FALSE;
   }
 }
+

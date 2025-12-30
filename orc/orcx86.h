@@ -27,7 +27,6 @@ typedef struct _OrcX86Target
   int (*is_64bit)(int flags);
   int (*use_frame_pointer)(int flags);
   int (*use_long_jumps)(int flags);
-  int (*loop_shift)(int max_var_size);
   void (*init_accumulator)(OrcCompiler *c, OrcVariable *var);
   void (*reduce_accumulator)(OrcCompiler *c, int i, OrcVariable *var);
   void (*load_constant)(OrcCompiler *c, int reg, int size, orc_uint64 value);

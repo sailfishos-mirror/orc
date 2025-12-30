@@ -143,26 +143,6 @@ sse_use_long_jumps (int flags)
   }
 }
 
-static int
-sse_loop_shift (int max_var_size)
-{
-  switch (max_var_size) {
-    case 1:
-      return 4;
-    case 2:
-      return 3;
-    case 4:
-      return 2;
-    case 8:
-      return 1;
-    default:
-      ORC_ERROR ("unhandled max var size %d", max_var_size);
-      break;
-  }
-
-  return -1;
-}
-
 static void
 sse_init_accumulator (OrcCompiler *compiler, OrcVariable *var)
 {
@@ -501,7 +481,6 @@ orc_sse_init (void)
     sse_is_64bit,
     sse_use_frame_pointer,
     sse_use_long_jumps,
-    sse_loop_shift,
     sse_init_accumulator,
     sse_reduce_accumulator,
     NULL,

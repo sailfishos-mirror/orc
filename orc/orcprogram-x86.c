@@ -67,21 +67,9 @@ orc_x86_use_long_jumps (OrcX86Target *t, OrcCompiler *c)
 static void
 orc_x86_compiler_max_loop_shift (OrcX86Target *t, OrcCompiler *c)
 {
-  int i;
-  int n = 2;
-  const int max_elements = (t->register_size / c->max_var_size);
-
-  if (max_elements <= 1) {
-    // MMX fits just the one element
-    i = 0;
-  } else {
-    for (i = 1; i; i++) {
-      if (max_elements == n)
-        break;
-      n *= 2;
-    }
+  if (!orc_compiler_get_max_loop_shift (c, &c->loop_shift)) {
+    c->loop_shift = 0;
   }
-  c->loop_shift = i;
 }
 
 static void
