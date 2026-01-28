@@ -148,6 +148,9 @@ typedef enum _OrcAVX512Insn {
   ORC_AVX512_INSN_SSE_vpmovzxdq,
   ORC_AVX512_INSN_AVX_vpmovzxdq,
   ORC_AVX512_INSN_vpmovzxdq,
+  ORC_AVX512_INSN_SSE_vpmovqd,
+  ORC_AVX512_INSN_AVX_vpmovqd,
+  ORC_AVX512_INSN_vpmovqd,
   ORC_AVX512_INSN_AVX_vpermd,
   ORC_AVX512_INSN_vpermd,
   ORC_AVX512_INSN_AVX_vpermq,
@@ -729,6 +732,21 @@ typedef enum _OrcAVX512Insn {
 #define orc_avx512_insn_emit_vpcmpeqd(c, s0, s1, d, m) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpcmpeqd, s0, s1, ORC_REG_INVALID, d, m, FALSE)
 
+#define orc_avx512_insn_avx_emit_vpcmpeqd(c, s0, s1, d, m) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_AVX_vpcmpeqd, s0, s1, ORC_REG_INVALID, d, m, FALSE)
+
+#define orc_avx512_insn_sse_emit_vpcmpeqd(c, s0, s1, d, m) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpcmpeqd, s0, s1, ORC_REG_INVALID, d, m, FALSE)
+
+#define orc_avx512_insn_emit_vpcmpeqq(c, s0, s1, d, m) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpcmpeqq, s0, s1, ORC_REG_INVALID, d, m, FALSE)
+
+#define orc_avx512_insn_avx_emit_vpcmpeqq(c, s0, s1, d, m) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_AVX_vpcmpeqq, s0, s1, ORC_REG_INVALID, d, m, FALSE)
+
+#define orc_avx512_insn_sse_emit_vpcmpeqq(c, s0, s1, d, m) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpcmpeqq, s0, s1, ORC_REG_INVALID, d, m, FALSE)
+
 #define orc_avx512_insn_emit_vpinsrb_r_r_m_i(c, i, o, s0, s1, d) \
   orc_avx512_insn_emit_load_memoffset (c, ORC_AVX512_INSN_vpinsrb, i, o, s0, s1, d, ORC_REG_INVALID, FALSE)
 
@@ -835,6 +853,15 @@ typedef enum _OrcAVX512Insn {
 #define orc_avx512_insn_sse_emit_vpmovzxdq(c, s0, d, m, z) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpmovzxdq, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, m, z);
 
+#define orc_avx512_insn_emit_vpmovqd(c, s0, d, m, z) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpmovqd, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, m, z);
+
+#define orc_avx512_insn_avx_emit_vpmovqd(c, s0, d, m, z) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_AVX_vpmovqd, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, m, z);
+
+#define orc_avx512_insn_sse_emit_vpmovqd(c, s0, d, m, z) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpmovqd, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, m, z);
+
 #define orc_avx512_insn_emit_vpermq(c, s0, s1, d, m, z) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpermq, s0, s1, ORC_REG_INVALID, d, m, z);
 
@@ -858,8 +885,20 @@ typedef enum _OrcAVX512Insn {
 #define orc_avx512_insn_emit_vpmovm2d(c, s0, d) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpmovm2d, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, ORC_REG_INVALID, FALSE)
 
+#define orc_avx512_insn_avx_emit_vpmovm2d(c, s0, d) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_AVX_vpmovm2d, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, ORC_REG_INVALID, FALSE)
+
+#define orc_avx512_insn_sse_emit_vpmovm2d(c, s0, d) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpmovm2d, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, ORC_REG_INVALID, FALSE)
+
 #define orc_avx512_insn_emit_vpmovm2q(c, s0, d) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpmovm2q, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, ORC_REG_INVALID, FALSE)
+
+#define orc_avx512_insn_avx_emit_vpmovm2q(c, s0, d) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_AVX_vpmovm2q, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, ORC_REG_INVALID, FALSE)
+
+#define orc_avx512_insn_sse_emit_vpmovm2q(c, s0, d) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpmovm2q, s0, ORC_REG_INVALID, ORC_REG_INVALID, d, ORC_REG_INVALID, FALSE)
 
 #define orc_avx512_insn_emit_vpminsd(c, s0, s1, d, m, z) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpminsd, s0, s1, ORC_REG_INVALID, d, m, z)
@@ -1304,6 +1343,12 @@ typedef enum _OrcAVX512Insn {
 #define orc_avx512_insn_emit_vpsraq_r_r_i(c, i, s0, d, m, z) \
   orc_avx512_insn_emit_imm(c, ORC_AVX512_INSN_vpsraq_r_rm_i, ORC_X86_INSN_OPERAND_SIZE_NONE, i, s0, ORC_REG_INVALID, d, m, z)
 
+#define orc_avx512_insn_avx_emit_vpsraq_r_r_i(c, i, s0, d, m, z) \
+  orc_avx512_insn_emit_imm(c, ORC_AVX512_INSN_AVX_vpsraq_r_rm_i, ORC_X86_INSN_OPERAND_SIZE_NONE, i, s0, ORC_REG_INVALID, d, m, z)
+
+#define orc_avx512_insn_sse_emit_vpsraq_r_r_i(c, i, s0, d, m, z) \
+  orc_avx512_insn_emit_imm(c, ORC_AVX512_INSN_SSE_vpsraq_r_rm_i, ORC_X86_INSN_OPERAND_SIZE_NONE, i, s0, ORC_REG_INVALID, d, m, z)
+
 #define orc_avx512_insn_emit_vpslld_r_m_i(c, i, o, s0, d, m, z) \
   orc_avx512_insn_emit_load_memoffset(c, ORC_AVX512_INSN_vpslld_r_rm_i, i, o, s0, ORC_REG_INVALID, d, m, z)
 
@@ -1532,6 +1577,15 @@ typedef enum _OrcAVX512Insn {
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_AVX_vpandnd, s0, s1, ORC_REG_INVALID, d, m, z)
 #define orc_avx512_insn_sse_emit_vpandnd(c, s0, s1, d, m, z) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpandnd, s0, s1, ORC_REG_INVALID, d, m, z)
+
+#define orc_avx512_insn_emit_vpandnq(c, s0, s1, d, m, z) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpandnq, s0, s1, ORC_REG_INVALID, d, m, z);
+
+#define orc_avx512_insn_avx_emit_vpandnq(c, s0, s1, d, m, z) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_AVX_vpandnq, s0, s1, ORC_REG_INVALID, d, m, z)
+
+#define orc_avx512_insn_sse_emit_vpandnq(c, s0, s1, d, m, z) \
+  orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_SSE_vpandnq, s0, s1, ORC_REG_INVALID, d, m, z)
 
 #define orc_avx512_insn_emit_vpavgb(c, s0, s1, d, m, z) \
   orc_avx512_insn_emit_avx512 (c, ORC_AVX512_INSN_vpavgb, s0, s1, ORC_REG_INVALID, d, m, z);

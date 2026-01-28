@@ -1544,15 +1544,37 @@ orc_avx512_rule_convfl (OrcCompiler *c, void *user, OrcInstruction *insn)
   orc_avx512_compiler_release_mask_reg (c, mask);
 }
 
-/* FIXME handle the saturation on indefinite values */
+/* Handle saturation on indefinite values (out of range doubles) */
 static void
 orc_avx512_rule_convdl (OrcCompiler *c, void *user, OrcInstruction *insn)
 {
+  /* Indefinite integer value 2^31 (0x80000000) returned on overflow/NaN */
+  OrcConstant ind_c = ORC_CONSTANT_INIT_U32 (0x80000000);
   int src = ORC_SRC_ARG (c, insn, 0);
   int dest = ORC_DEST_ARG (c, insn, 0);
+  int ind = orc_compiler_get_constant_full (c, &ind_c);
+  int tmp1 = orc_compiler_get_temp_reg (c);
+  int tmp2 = orc_compiler_get_temp_reg (c);
+  int mask = orc_avx512_compiler_get_mask_reg (c, TRUE);
 
-  orc_avx512_insn_emit_vcvtpd2dq (c, src, ORC_AVX512_AVX_REG (dest),
-      ORC_REG_INVALID, FALSE);
+  /* Extract sign bits from source doubles (qwords) */
+  orc_avx512_insn_emit_vpsraq_r_r_i (c, 63, src, tmp1, ORC_REG_INVALID, FALSE);
+  /* Convert doubles to int32 with truncation - narrows ZMM->YMM */
+  orc_avx512_insn_emit_vcvttpd2dq (c, src, dest, ORC_REG_INVALID, FALSE);
+  /* Narrow the sign bits qwords->dwords to match result width */
+  orc_avx512_insn_emit_vpmovqd (c, tmp1, tmp1, ORC_REG_INVALID, FALSE);
+  /* Compare result with 0x80000000 (indefinite) */
+  orc_avx512_insn_emit_vpcmpeqd (c, ind, dest, mask, ORC_REG_INVALID);
+  /* Convert mask to vector */
+  orc_avx512_insn_emit_vpmovm2d (c, mask, tmp2);
+  /* AND-NOT: keep only positive overflows (sign=0 and result=0x80000000) */
+  orc_avx512_insn_emit_vpandnd (c, tmp1, tmp2, tmp1, ORC_REG_INVALID, FALSE);
+  /* Add correction: 0x80000000 + 0xFFFFFFFF = 0x7FFFFFFF (INT32_MAX) */
+  orc_avx512_insn_emit_vpaddd (c, dest, tmp1, dest, ORC_REG_INVALID, FALSE);
+
+  orc_compiler_release_temp_reg (c, tmp1);
+  orc_compiler_release_temp_reg (c, tmp2);
+  orc_avx512_compiler_release_mask_reg (c, mask);
 }
 
 static void

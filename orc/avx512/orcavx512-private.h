@@ -363,6 +363,13 @@ typedef enum _OrcAVX512InsnOperandFlag {
   ORC_AVX512_INSN_OPERAND_OP2_ZMM              \
 )
 
+#define ORC_AVX512_INSN_TYPE_AVXM_AVX512 (\
+  ORC_X86_INSN_OPERAND_REGM_REG           \
+), (                                      \
+  ORC_AVX_INSN_OPERAND_OP1_YMM |          \
+  ORC_AVX512_INSN_OPERAND_OP2_ZMM         \
+)
+
 #define ORC_AVX512_INSN_TYPE_K_K_K (\
   ORC_X86_INSN_OPERAND_OP1_REG |    \
   ORC_X86_INSN_OPERAND_OP2_REG |    \

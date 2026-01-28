@@ -207,6 +207,13 @@ typedef enum _OrcAVXInsnOperandFlag {
   ORC_SSE_INSN_OPERAND_OP2_XMM        \
 )
 
+#define ORC_AVX_INSN_TYPE_SSEM_AVX (\
+  ORC_X86_INSN_OPERAND_REGM_REG     \
+), (                                \
+  ORC_SSE_INSN_OPERAND_OP1_XMM |    \
+  ORC_AVX_INSN_OPERAND_OP2_YMM      \
+)
+
 #define ORC_AVX_INSN_TYPE_SSEM_AVX_IMM8 (\
   ORC_X86_INSN_OPERAND_REGM_REG_IMM |    \
   ORC_X86_INSN_OPERAND_OP3_8             \
