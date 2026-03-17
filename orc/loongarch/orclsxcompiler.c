@@ -101,7 +101,7 @@ orc_lsx_compiler_emit_prologue (OrcCompiler *c)
   for (int i = 0; i < 32; i++) {
     if (c->used_regs[ORC_GP_REG_BASE + i] && c->save_regs[ORC_GP_REG_BASE + i]) {
       stack_size += 8;
-      orc_loongarch_insn_emit_st_d (c, ORC_LOONG_SP, ORC_GP_REG_BASE + i, -stack_size);
+      orc_loongarch_insn_emit_st_d (c, ORC_GP_REG_BASE + i, ORC_LOONG_SP, -stack_size);
     }
   }
 
@@ -122,16 +122,17 @@ orc_lsx_compiler_emit_epilogue (OrcCompiler *c)
 {
   int stack_size = 0;
 
+  /* Vector registers should be restored first if used. */
   for (int i = 31; i >= 0; i--) {
-    if (c->used_regs[ORC_GP_REG_BASE + i] && c->save_regs[ORC_GP_REG_BASE + i]) {
-      orc_loongarch_insn_emit_ld_d (c, ORC_GP_REG_BASE + i, ORC_LOONG_SP, stack_size);
+    if (c->used_regs[ORC_VEC_REG_BASE + i] && c->save_regs[ORC_VEC_REG_BASE + i]) {
+      orc_lsx_insn_emit_vldrepld (c, ORC_VEC_REG_BASE + i, ORC_LOONG_SP, stack_size);
       stack_size += 8;
     }
   }
 
   for (int i = 31; i >= 0; i--) {
-    if (c->used_regs[ORC_VEC_REG_BASE + i] && c->save_regs[ORC_VEC_REG_BASE + i]) {
-      orc_lsx_insn_emit_vldrepld (c, ORC_GP_REG_BASE + i, ORC_LOONG_SP, stack_size);
+    if (c->used_regs[ORC_GP_REG_BASE + i] && c->save_regs[ORC_GP_REG_BASE + i]) {
+      orc_loongarch_insn_emit_ld_d (c, ORC_GP_REG_BASE + i, ORC_LOONG_SP, stack_size);
       stack_size += 8;
     }
   }
