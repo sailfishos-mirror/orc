@@ -1421,7 +1421,7 @@ orc_lsx_insn_emit_vstelmb (OrcCompiler *c,
     OrcLoongRegister vd, OrcLoongRegister rj, int si8, int idx)
 {
   ORC_ASM_CODE (c, "  vstelm.b %s, %s, %d, %d\n", NAME (vd), NAME (rj), si8, idx);
-  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMB, VREG(vd), GREG(rj), 0b0011000110000000000000 | (idx << 9 ) | si8));
+  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMB, VREG(vd), GREG(rj), (1 << 13) | (idx << 8 ) | (si8 & 0xff)));
 }
 
 void
@@ -1429,7 +1429,7 @@ orc_lsx_insn_emit_vstelmh (OrcCompiler *c,
     OrcLoongRegister vd, OrcLoongRegister rj, int si8, int idx)
 {
   ORC_ASM_CODE (c, "  vstelm.h %s, %s, %d, %d\n", NAME (vd), NAME (rj), si8, idx);
-  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMH, VREG(vd), GREG(rj), 0b0011000101000000000000 | (idx << 9 ) | (si8 >> 1)));
+  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMH, VREG(vd), GREG(rj), (1 << 12) | (idx << 8 ) | ((si8 >> 1) & 0xff)));
 }
 
 void
@@ -1437,7 +1437,7 @@ orc_lsx_insn_emit_vstelmw (OrcCompiler *c,
     OrcLoongRegister vd, OrcLoongRegister rj, int si8, int idx)
 {
   ORC_ASM_CODE (c, "  vstelm.w %s, %s, %d, %d\n", NAME (vd), NAME (rj), si8, idx);
-  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMW, VREG(vd), GREG(rj), 0b0011000100100000000000 | (idx << 9 ) | (si8 >> 2)));
+  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMW, VREG(vd), GREG(rj), (1 << 11) | (idx << 8 ) | ((si8 >> 2) & 0xff)));
 }
 
 void
@@ -1445,7 +1445,7 @@ orc_lsx_insn_emit_vstelmd (OrcCompiler *c,
     OrcLoongRegister vd, OrcLoongRegister rj, int si8, int idx)
 {
   ORC_ASM_CODE (c, "  vstelm.d %s, %s, %d, %d\n", NAME (vd), NAME (rj), si8, idx);
-  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMD, VREG(vd), GREG(rj), 0b0011000100010000000000 | (idx << 9 ) | (si8 >> 3)));
+  orc_loongarch_insn_emit32 (c, LOONG_2RI14_INSTRUCTION(OPCODE_VSTELMD, VREG(vd), GREG(rj), (1 << 10) | (idx << 8 ) | ((si8 >> 3) & 0xff)));
 }
 
 void
