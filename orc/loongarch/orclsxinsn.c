@@ -36,6 +36,7 @@
 #include <orc/loongarch/orcloongarch.h>
 #include <orc/loongarch/orclsxinsn.h>
 #include <orc/loongarch/orcloongarchinsn.h>
+#include <string.h>
 
 typedef enum
 {
@@ -1888,7 +1889,12 @@ orc_lsx_insn_emit_flush_subnormals (OrcCompiler *c, int element_width,
       element_width ==
       4 ? 0xff800000 : ORC_UINT64_C (0xfff) << 52;
   const orc_uint64 exponent = upper & (upper >> 1);
-  const OrcLoongRegister tmp1 = ORC_LOONG_VR0, tmp2 = ORC_LOONG_VR15;
+
+  int tmp1 = orc_compiler_get_temp_reg (c);
+  int tmp2 = orc_compiler_get_temp_reg (c);
+  if (strcmp (c->target->name, "lasx") == 0) {
+    tmp1 -= 32; tmp2 -= 32;
+  }
 
   orc_loongarch_insn_emit_load_imm (c, c->gp_tmpreg, exponent);
 
@@ -1916,6 +1922,12 @@ orc_lsx_insn_emit_flush_subnormals (OrcCompiler *c, int element_width,
     orc_lsx_insn_emit_vandv (c, tmp2, tmp2, vs);
     orc_lsx_insn_emit_vbitselv (c, vd, vd, tmp2, tmp1);
   }
+
+  if (strcmp (c->target->name, "lasx") == 0) {
+    tmp1 += 32; tmp2 += 32;
+  }
+  orc_compiler_release_temp_reg (c, tmp1);
+  orc_compiler_release_temp_reg (c, tmp2);
 }
 
 OrcLoongRegister
