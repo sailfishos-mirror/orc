@@ -139,7 +139,11 @@ orc_riscv_target_get_default_flags (void)
 #if defined(HAVE_RISCV) && defined(__linux__)
   return orc_riscv_target_get_cpu_flags ();
 #else
-  return ORC_TARGET_RISCV_64BIT | ORC_TARGET_RISCV_V;
+  orc_uint32 ret = 0;
+#if defined(__riscv_xlen) && __riscv_xlen == 64
+  ret |= ORC_TARGET_RISCV_64BIT;
+#endif
+  return ret;
 #endif
 }
 
