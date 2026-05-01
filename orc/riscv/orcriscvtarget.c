@@ -67,52 +67,59 @@ orc_riscv_target_detect_extension (const char *exts, const char *ext)
 
   return FALSE;
 }
-#endif
 
-#ifdef HAVE_RISCV
 static orc_uint32
-orc_riscv_target_get_cpu_flags (void)
+orc_check_riscv_proc_cpuinfo (void)
 {
-  orc_uint32 ret = 0;
+  unsigned long flags = 0;
+  char *cpuinfo;
+  char *cpuinfo_line;
 
-#if defined(__riscv_xlen) && __riscv_xlen == 64
-  ret |= ORC_TARGET_RISCV_64BIT;
-#endif
-
-#ifdef __linux__
-  char *cpuinfo = get_proc_cpuinfo ();
+  cpuinfo = get_proc_cpuinfo ();
   if (cpuinfo == NULL) {
     ORC_DEBUG ("Failed to read /proc/cpuinfo");
     return 0;
   }
 
-  char *cpuinfo_line = get_tag_value (cpuinfo, "isa");
+  cpuinfo_line = get_tag_value (cpuinfo, "isa");
   if (cpuinfo_line) {
     if (orc_riscv_target_detect_extension (cpuinfo_line, "c"))
-      ret |= ORC_TARGET_RISCV_C;
-
+      flags |= ORC_TARGET_RISCV_C;
     if (orc_riscv_target_detect_extension (cpuinfo_line, "v"))
-      ret |= ORC_TARGET_RISCV_V;
-
+      flags |= ORC_TARGET_RISCV_V;
     if (orc_riscv_target_detect_extension (cpuinfo_line, "zvkb"))
-      ret |= ORC_TARGET_RISCV_ZVKB;
-
+      flags |= ORC_TARGET_RISCV_ZVKB;
     if (orc_riscv_target_detect_extension (cpuinfo_line, "zvbb"))
-      ret |= ORC_TARGET_RISCV_ZVBB;
-
+      flags |= ORC_TARGET_RISCV_ZVBB;
     if (orc_riscv_target_detect_extension (cpuinfo_line, "zvkn"))
-      ret |= ORC_TARGET_RISCV_ZVKN;
-
+      flags |= ORC_TARGET_RISCV_ZVKN;
     if (orc_riscv_target_detect_extension (cpuinfo_line, "zvks"))
-      ret |= ORC_TARGET_RISCV_ZVKS;
+      flags |= ORC_TARGET_RISCV_ZVKS;
 
     free (cpuinfo_line);
   }
-#endif
 
-  return ret;
+  free (cpuinfo);
+
+  return flags;
 }
 #endif
+
+static orc_uint32
+orc_riscv_target_get_cpu_flags (void)
+{
+  orc_uint32 flags = 0;
+
+#if defined(__riscv_xlen) && __riscv_xlen == 64
+  flags |= ORC_TARGET_RISCV_64BIT;
+#endif
+
+#if defined(HAVE_RISCV) && defined(__linux__)
+  flags |= orc_check_riscv_proc_cpuinfo ();
+#endif
+
+  return flags;
+}
 
 static void
 orc_riscv_target_flush_cache (OrcCode *code)
@@ -136,15 +143,15 @@ orc_riscv_target_flush_cache (OrcCode *code)
 static orc_uint32
 orc_riscv_target_get_default_flags (void)
 {
-#if defined(HAVE_RISCV) && defined(__linux__)
-  return orc_riscv_target_get_cpu_flags ();
-#else
-  orc_uint32 ret = 0;
+  orc_uint32 flags = 0;
+
 #if defined(__riscv_xlen) && __riscv_xlen == 64
-  ret |= ORC_TARGET_RISCV_64BIT;
+  flags |= ORC_TARGET_RISCV_64BIT;
 #endif
-  return ret;
-#endif
+
+  flags |= orc_riscv_target_get_cpu_flags ();
+
+  return flags;
 }
 
 static OrcTarget orc_riscv_target = {
