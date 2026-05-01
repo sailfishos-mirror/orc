@@ -73,17 +73,6 @@
 /***** arm *****/
 
 #if defined (__arm__) || defined (__aarch64__) || defined (_M_ARM64)
-#if 0
-static unsigned long
-orc_profile_stamp_xscale(void)
-{
-  unsigned int ts;
-  __asm__ __volatile__ (
-      "  mrc p14, 0, %0, c1, c0, 0 \n"
-      : "=r" (ts));
-  return ts;
-}
-#endif
 
 #ifdef HAVE_ELF_AUX_INFO
 static unsigned long

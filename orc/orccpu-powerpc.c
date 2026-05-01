@@ -71,16 +71,6 @@
 /***** powerpc *****/
 int orc_powerpc_cpu_flags;
 
-#if 0
-static unsigned long
-orc_profile_stamp_tb(void)
-{
-  unsigned long ts;
-  __asm__ __volatile__("mftb %0\n" : "=r" (ts));
-  return ts;
-}
-#endif
-
 #if defined(HAVE_ELF_AUX_INFO)
 static void
 orc_check_powerpc_elf_aux_info (void)
