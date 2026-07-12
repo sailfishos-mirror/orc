@@ -978,7 +978,7 @@ orc_riscv_insn_emit_vand_vi (OrcCompiler *c,
     OrcRiscvRegister vd, OrcRiscvRegister vs2, int imm)
 {
   ORC_ASM_CODE (c, "  vand.vi %s, %s, %d\n", NAME (vd), NAME (vs2), imm);
-  orc_riscv_insn_vop (c, 0b001001, 1, imm & 0b11111, VREG (vs2), OPIVI,
+  orc_riscv_insn_vop (c, 0b001001, 1, VREG (vs2), imm & 0b11111, OPIVI,
       VREG (vd));
 }
 
@@ -1491,6 +1491,26 @@ orc_riscv_insn_emit_vmv_sx (OrcCompiler *c, OrcRiscvRegister vd,
 {
   ORC_ASM_CODE (c, "  vmv.s.x %s, %s\n", NAME (vd), NAME (rs1));
   orc_riscv_insn_vop (c, 0b010000, 1, 0, XREG (rs1), OPMVX, VREG (vd));
+}
+
+void
+orc_riscv_insn_emit_vrgather_vv (OrcCompiler *c,
+    OrcRiscvRegister vd, OrcRiscvRegister vs2, OrcRiscvRegister vs1)
+{
+  ORC_ASM_CODE (c, "  vrgather.vv %s, %s, %s\n",
+      NAME (vd), NAME (vs2), NAME (vs1));
+  orc_riscv_insn_vop (c, 0b001100, 1, VREG (vs2), VREG (vs1), OPIVV,
+      VREG (vd));
+}
+
+void
+orc_riscv_insn_emit_vmerge_vvm (OrcCompiler *c,
+    OrcRiscvRegister vd, OrcRiscvRegister vs2, OrcRiscvRegister vs1)
+{
+  ORC_ASM_CODE (c, "  vmerge.vvm %s, %s, %s, v0.t\n",
+      NAME (vd), NAME (vs2), NAME (vs1));
+  orc_riscv_insn_vop (c, 0b010111, 0, VREG (vs2), VREG (vs1), OPIVV,
+      VREG (vd));
 }
 
 void

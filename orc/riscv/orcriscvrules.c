@@ -1332,6 +1332,85 @@ orc_riscv_rule_ldreslinl (OrcCompiler *c, void *user, OrcInstruction *insn)
   src->update_type = ORC_VARIABLE_UPDATE_TYPE_NONE;
 }
 
+static void
+orc_riscv_rule_loadupdb (OrcCompiler *c, void *user, OrcInstruction *insn)
+{
+  OrcVariable *src = c->vars + insn->src_args[0];
+  const OrcVariable *dest = c->vars + insn->dest_args[0];
+  GET_TEMP_REGS (temp, c, insn);
+
+  orc_riscv_insn_emit_addi (c, c->gp_tmpreg, ORC_RISCV_VECTOR_LENGTH, 0);
+  orc_riscv_insn_emit_addi (c, c->gp_tmpreg, c->gp_tmpreg, 1);
+  orc_riscv_insn_emit_srli (c, c->gp_tmpreg, c->gp_tmpreg, 1);
+
+  const OrcRiscvVtype vtype =
+      orc_riscv_compiler_compute_vtype (c, ORC_RISCV_SEW_8, 0);
+  orc_riscv_insn_emit_vsetvli (c, ORC_RISCV_ZERO, c->gp_tmpreg, vtype);
+
+  if (src->ptr_offset)
+    orc_riscv_insn_emit_addi (c, c->gp_tmpreg, src->ptr_register,
+        src->ptr_offset);
+  orc_riscv_insn_emit_vle8 (c, temp[0],
+      src->ptr_offset ? c->gp_tmpreg : src->ptr_register);
+
+  orc_riscv_insn_emit_vsetvli (c, ORC_RISCV_ZERO, ORC_RISCV_VECTOR_LENGTH,
+      vtype);
+
+  orc_riscv_insn_emit_vid_v (c, temp[1]);
+  orc_riscv_insn_emit_vsrl_vi (c, temp[1], temp[1], 1);
+
+  orc_riscv_insn_emit_vrgather_vv (c, dest->alloc, temp[0], temp[1]);
+
+  src->update_type = 1;
+}
+
+static void
+orc_riscv_rule_loadupib (OrcCompiler *c, void *user, OrcInstruction *insn)
+{
+  OrcVariable *src = c->vars + insn->src_args[0];
+  const OrcVariable *dest = c->vars + insn->dest_args[0];
+  GET_TEMP_REGS (temp, c, insn);
+
+  orc_riscv_insn_emit_addi (c, c->gp_tmpreg, ORC_RISCV_VECTOR_LENGTH, 0);
+  orc_riscv_insn_emit_addi (c, c->gp_tmpreg, c->gp_tmpreg, 1);
+  orc_riscv_insn_emit_srli (c, c->gp_tmpreg, c->gp_tmpreg, 1);
+
+  const OrcRiscvVtype vtype =
+      orc_riscv_compiler_compute_vtype (c, ORC_RISCV_SEW_8, 0);
+  orc_riscv_insn_emit_vsetvli (c, ORC_RISCV_ZERO, c->gp_tmpreg, vtype);
+
+  if (src->ptr_offset)
+    orc_riscv_insn_emit_addi (c, c->gp_tmpreg, src->ptr_register,
+        src->ptr_offset);
+  orc_riscv_insn_emit_vle8 (c, temp[0],
+      src->ptr_offset ? c->gp_tmpreg : src->ptr_register);
+
+  orc_riscv_insn_emit_addi (c, c->gp_tmpreg,
+      src->ptr_offset ? c->gp_tmpreg : src->ptr_register, 1);
+  orc_riscv_insn_emit_vle8 (c, temp[1], c->gp_tmpreg);
+
+  orc_riscv_insn_emit_vsetvli (c, ORC_RISCV_ZERO, ORC_RISCV_VECTOR_LENGTH,
+      vtype);
+
+  orc_riscv_insn_emit_vid_v (c, temp[2]);
+  orc_riscv_insn_emit_vsrl_vi (c, temp[2], temp[2], 1);
+
+  orc_riscv_insn_emit_vrgather_vv (c, dest->alloc, temp[0], temp[2]);
+
+  orc_riscv_insn_emit_vrgather_vv (c, temp[0], temp[1], temp[2]);
+
+  orc_riscv_insn_emit_vaaddu_vv (c, temp[1], dest->alloc, temp[0]);
+
+  orc_riscv_insn_emit_vid_v (c, temp[0]);
+  orc_riscv_insn_emit_vand_vi (c, temp[0], temp[0], 1);
+  orc_riscv_insn_emit_vxor_vv (c, temp[2], temp[2], temp[2]);
+  orc_riscv_insn_emit_vmsne_vv (c, ORC_RISCV_V0, temp[0], temp[2]);
+
+  orc_riscv_insn_emit_vmerge_vvm (c, dest->alloc, dest->alloc, temp[1]);
+
+  src->update_type = ORC_VARIABLE_UPDATE_TYPE_HALF;
+}
+
 #define REG(opcode, rule, sew, mask, temps, normals) \
   static OrcRiscvRuleInfo opcode##_info; \
   orc_rule_register (rule_set, #opcode, orc_riscv_rule_##rule, (void*)&opcode##_info); \
@@ -1371,6 +1450,9 @@ orc_riscv_rules_init (OrcTarget *target)
 
   REG (ldresnearl, ldresnearl, 32, FALSE, 2, 0);
   REG (ldreslinl, ldreslinl, 32, FALSE, 5, 0);
+  REG (loadupdb, loadupdb, NOT_APPLICABLE, TRUE, 2, 0);
+  REG (loadupib, loadupib, NOT_APPLICABLE, TRUE, 3, 0);
+
   REG (copyb, copyX, 8, FALSE, 0, 0);
   REG (copyw, copyX, 16, FALSE, 0, 0);
   REG (copyl, copyX, 32, FALSE, 0, 0);

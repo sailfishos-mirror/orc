@@ -367,8 +367,14 @@ orc_riscv_compiler_emit_loop (OrcCompiler *c, OrcRiscvVtype vtype)
         length_shift = i;
       }
 
-      orc_riscv_insn_emit_add (c, var->ptr_register, var->ptr_register,
-          ORC_RISCV_VECTOR_LENGTH);
+      if (var->update_type == ORC_VARIABLE_UPDATE_TYPE_HALF) {
+        orc_riscv_insn_emit_srli (c, c->gp_tmpreg, ORC_RISCV_VECTOR_LENGTH, 1);
+        orc_riscv_insn_emit_add (c, var->ptr_register, var->ptr_register,
+            c->gp_tmpreg);
+      } else {
+        orc_riscv_insn_emit_add (c, var->ptr_register, var->ptr_register,
+            ORC_RISCV_VECTOR_LENGTH);
+      }
     }
   }
 }
@@ -401,6 +407,9 @@ orc_riscv_compiler_add_strides (OrcCompiler *c)
         if (c->vars[i].size != 1)
           orc_riscv_insn_emit_slli (c, c->gp_tmpreg, c->gp_tmpreg,
               orc_riscv_compiler_bytes_to_sew (c->vars[i].size));
+
+        if (c->vars[i].update_type == ORC_VARIABLE_UPDATE_TYPE_HALF)
+          orc_riscv_insn_emit_srli (c, c->gp_tmpreg, c->gp_tmpreg, 1);
 
         orc_riscv_insn_emit_sub (c, c->vars[i].ptr_register,
             c->vars[i].ptr_register, c->gp_tmpreg);
