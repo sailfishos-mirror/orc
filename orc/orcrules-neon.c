@@ -192,6 +192,15 @@ orc_neon_rule_andn (OrcCompiler *p, void *user, OrcInstruction *insn)
     orc_neon32_rule_andn (p, user, insn);
 }
 
+static void
+orc_neon_rule_divluw (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  if (p->is_64bit)
+    orc_neon64_rule_divluw (p, user, insn);
+  else
+    orc_neon32_rule_divluw (p, user, insn);
+}
+
 static const OrcNeonRule orc_neon_rules[] = {
   [ORC_NEON_OP_ABSB]      = { "absb"     , orc_neon_unary_rule        },
   [ORC_NEON_OP_ADDB]      = { "addb"     , orc_neon_binary_rule       },
@@ -654,5 +663,7 @@ orc_compiler_neon_register_rules (OrcTarget *target)
   orc_rule_register (rule_set, "andnw", orc_neon_rule_andn, (void *)2);
   orc_rule_register (rule_set, "andnl", orc_neon_rule_andn, (void *)1);
   orc_rule_register (rule_set, "andnq", orc_neon_rule_andn, (void *)0);
+
+  orc_rule_register (rule_set, "divluw", orc_neon_rule_divluw, NULL);
 }
 

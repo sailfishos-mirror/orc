@@ -258,6 +258,7 @@ ORC_INTERNAL void orc_neon32_rule_splitql(OrcCompiler *p, void *user, OrcInstruc
 ORC_INTERNAL void orc_neon32_rule_splitlw(OrcCompiler *p, void *user, OrcInstruction *insn);
 ORC_INTERNAL void orc_neon32_rule_splitwb(OrcCompiler *p, void *user, OrcInstruction *insn);
 ORC_INTERNAL void orc_neon32_rule_div255w(OrcCompiler *p, void *user, OrcInstruction *insn);
+ORC_INTERNAL void orc_neon32_rule_divluw(OrcCompiler *p, void *user, OrcInstruction *insn);
 
 ORC_INTERNAL void orc_neon64_binary_long_rule(OrcCompiler *compiler, void *user, OrcInstruction *insn);
 ORC_INTERNAL void orc_neon64_binary_narrow_rule(OrcCompiler *compiler, void *user, OrcInstruction *insn);
@@ -304,5 +305,6 @@ ORC_INTERNAL void orc_neon64_rule_splitql(OrcCompiler *p, void *user, OrcInstruc
 ORC_INTERNAL void orc_neon64_rule_splitlw(OrcCompiler *p, void *user, OrcInstruction *insn);
 ORC_INTERNAL void orc_neon64_rule_splitwb(OrcCompiler *p, void *user, OrcInstruction *insn);
 ORC_INTERNAL void orc_neon64_rule_div255w(OrcCompiler *p, void *user, OrcInstruction *insn);
+ORC_INTERNAL void orc_neon64_rule_divluw(OrcCompiler *p, void *user, OrcInstruction *insn);
 
 #endif

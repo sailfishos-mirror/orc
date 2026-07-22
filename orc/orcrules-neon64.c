@@ -1238,6 +1238,85 @@ orc_neon64_rule_andn (OrcCompiler *p, void *user, OrcInstruction *insn)
 }
 
 void
+orc_neon64_rule_divluw (OrcCompiler *p, void *user, OrcInstruction *insn)
+{
+  OrcVariable *src0 = p->vars + insn->src_args[0];
+  OrcVariable *src1 = p->vars + insn->src_args[1];
+  OrcVariable *dest = p->vars + insn->dest_args[0];
+  const int vec_shift = 2; /* word width, matches ANDW/XORW/SUBW/CMPGTSW table entries */
+  const int is_quad = p->insn_shift > vec_shift;
+  const int saved_min_temp_reg = p->min_temp_reg;
+  int i;
+
+  /* get_temp_reg() scans from min_temp_reg for the first free register, GP
+   * or vector — altivec/mips/x86 bound this to the vector class via
+   * orc_compiler_reset_temp_regs() once per instruction; neon never does,
+   * so it stays at its GP-range default. Bound it here for these calls. */
+  p->min_temp_reg = ORC_VEC_REG_BASE;
+
+  OrcVariable a       = { .alloc = orc_compiler_get_temp_reg (p), .size = 2 };
+  OrcVariable j       = { .alloc = orc_compiler_get_temp_reg (p), .size = 2 };
+  OrcVariable j2      = { .alloc = orc_compiler_get_temp_reg (p), .size = 2 };
+  OrcVariable l       = { .alloc = orc_compiler_get_temp_reg (p), .size = 2 };
+  OrcVariable divisor = { .alloc = orc_compiler_get_temp_reg (p), .size = 2 };
+
+  p->min_temp_reg = saved_min_temp_reg;
+
+  /* orc_compiler_get_constant() dispatches through the x86-only
+   * target->load_constant_long vtable slot, which the neon target does not
+   * populate (NULL) — calling it here crashes at codegen time. Load these
+   * word-splat immediates the same way signw/mergewl already do on NEON64. */
+  orc_neon64_emit_loadiw (p, &a, 0x00ff); /* quotient accumulator seed */
+  orc_neon64_emit_loadiw (p, &j, 0x0080); /* moving bit-position marker */
+
+  /* dest = src0 (register copy via self-OR, same encoding as the registered
+   * "copyw"/mov opcode) */
+  if (src0->alloc != dest->alloc) {
+    orc_neon64_emit_binary (p, "orr", 0x0ea01c00, *dest, *src0, *src0, vec_shift);
+  }
+
+  /* divisor = (src1 << 8) >> 1 : aligns the divisor to bit 7 of each 16-bit lane */
+  orc_neon64_emit_shift (p, 3 /* shlw */, &divisor, src1, 8, is_quad);
+  orc_neon64_emit_shift (p, 5 /* shruw */, &divisor, &divisor, 1, is_quad);
+
+  for (i = 0; i < 7; i++) {
+    orc_neon64_emit_binary (p, "orr", 0x0ea01c00, l, divisor, divisor, vec_shift); /* l = divisor */
+    orc_neon64_emit_binary (p, "cmhi", 0x2e603400, l, l, *dest, vec_shift);        /* l = (l > dest) ? -1 : 0, unsigned */
+    orc_neon64_emit_binary (p, "orr", 0x0ea01c00, j2, l, l, vec_shift);             /* j2 = l */
+    orc_neon64_emit_binary (p, "bic", 0x0e601c00, l, divisor, l, vec_shift);        /* l = (~l) & divisor */
+    orc_neon64_emit_binary (p, "sub", 0x2e608400, *dest, *dest, l, vec_shift);      /* dest -= l */
+    orc_neon64_emit_shift (p, 5 /* shruw */, &divisor, &divisor, 1, is_quad);       /* divisor >>= 1 */
+
+    orc_neon64_emit_binary (p, "and", 0x0e201c00, j2, j2, j, vec_shift);            /* j2 &= j */
+    orc_neon64_emit_binary (p, "eor", 0x2e201c00, a, a, j2, vec_shift);             /* a ^= j2 */
+    orc_neon64_emit_shift (p, 5 /* shruw */, &j, &j, 1, is_quad);                   /* j >>= 1 */
+  }
+
+  /* Final LSB correction (SSE orcrules-sse.c:1358-1364). The 7-iteration loop
+   * above only resolves quotient bits down to position 1 (j stops at 0x0001
+   * after the loop's last shift) — this one extra round, WITHOUT a further
+   * divisor/j shift afterward, resolves bit 0. Omitting this step leaves the
+   * LSB of every quotient byte stuck at the seed value (1), which is wrong
+   * for roughly half of all inputs. */
+  orc_neon64_emit_binary (p, "orr", 0x0ea01c00, l, divisor, divisor, vec_shift);    /* l = divisor */
+  orc_neon64_emit_binary (p, "cmhi", 0x2e603400, l, l, *dest, vec_shift);           /* l = (l > dest) ? -1 : 0, unsigned */
+  orc_neon64_emit_binary (p, "and", 0x0e201c00, l, l, j, vec_shift);                /* l &= j */
+  orc_neon64_emit_binary (p, "eor", 0x2e201c00, a, a, l, vec_shift);                /* a ^= l */
+
+  orc_neon64_emit_binary (p, "orr", 0x0ea01c00, *dest, a, a, vec_shift);            /* dest = a */
+
+  /* release all 5 temp regs — SSE's sse_rule_divluw releases its 5 the same
+   * way (orcrules-sse.c:1365-1369); orc's ARM/NEON program driver never calls
+   * orc_compiler_reset_temp_regs (only altivec/mips/x86 do), so skipping
+   * this leaks these registers for the rest of the compiled program. */
+  orc_compiler_release_temp_reg (p, a.alloc);
+  orc_compiler_release_temp_reg (p, j.alloc);
+  orc_compiler_release_temp_reg (p, j2.alloc);
+  orc_compiler_release_temp_reg (p, l.alloc);
+  orc_compiler_release_temp_reg (p, divisor.alloc);
+}
+
+void
 orc_neon64_rule_accw (OrcCompiler *p, void *user, OrcInstruction *insn)
 {
   OrcVariable tmpreg = { .alloc = p->tmpreg, .size = p->vars[insn->src_args[0]].size };
