@@ -410,7 +410,7 @@ android armv7 cross:
     CLANG_ARCH: 'armv7a'
     ANDROID_HOST: 'androideabi'
 
-alpine 3.21 loongarch64:
+alpine edge loongarch64:
   stage: build
   needs:
     - "trigger"
@@ -419,8 +419,8 @@ alpine 3.21 loongarch64:
   when: 'manual'
   allow_failure: true
   script:
-    - apk add git build-base linux-headers meson
-    - meson setup $MESON_ARGS build/
+    - apk add git build-base linux-headers meson clang mold
+    - env CC=clang CXX=clang++ LD=mold meson setup $MESON_ARGS build/
     - meson compile --verbose -C build/
     - meson test -C build/
     - ORC_DEBUG=2 ./build/tools/orc-bugreport
@@ -457,9 +457,9 @@ alpine 3.24 armv7:
       - "build/*.bin"
       - "build/*.S"
 
-alpine 3.24 riscv64:
+alpine 3.23 riscv64:
   stage: build
-  image: alpine:3.24
+  image: alpine:3.23
   needs:
     - "trigger"
   tags:
