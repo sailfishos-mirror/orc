@@ -1150,7 +1150,10 @@ static const ShiftInfo immshift_info_64[] = {
   { 0x2f100400, "ushr", TRUE, 16, 2 },
   { 0x0f205400, "shl", FALSE, 32, 1 },
   { 0x0f200400, "sshr", TRUE, 32, 1 },
-  { 0x2f200400, "ushr", TRUE, 32, 1 }
+  { 0x2f200400, "ushr", TRUE, 32, 1 },
+  { 0x4f405400, "shl", FALSE, 64, 0 }, /* shlq */
+  { 0x4f400400, "sshr", TRUE, 64, 0 }, /* shrsq */
+  { 0x6f400400, "ushr", TRUE, 64, 0 }  /* shruq */
 };
 
 static const ShiftInfo regshift_info_64[] = {
@@ -1162,7 +1165,10 @@ static const ShiftInfo regshift_info_64[] = {
   { 0x2e604400, "ushl", TRUE, 0, 2 },
   { 0x2ea04400, "ushl", FALSE, 0, 1 },
   { 0x0ea04400, "sshl", TRUE, 0, 1 },
-  { 0x2ea04400, "ushl", TRUE, 0, 1 }
+  { 0x2ea04400, "ushl", TRUE, 0, 1 },
+  { 0x6ee04400, "ushl", FALSE, 0, 0 }, /* shlq */
+  { 0x4ee04400, "sshl", TRUE, 0, 0 },  /* shrsq */
+  { 0x6ee04400, "ushl", TRUE, 0, 0 }   /* shruq */
 };
 
 void
@@ -1178,6 +1184,26 @@ orc_neon64_emit_shift (OrcCompiler *const p, int type,
   }
   if (shift >= immshift_info_64[type].bits) {
     ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  if (shift == 0 && immshift_info_64[type].negate) {
+    /* The AArch64 immediate right-shift encoding can only represent
+     * shift amounts 1..bits, never 0 -- lower shift-by-zero to an
+     * identity copy instead. */
+    if (dest->alloc != src->alloc) {
+      orc_uint32 movcode = 0x0ea01c00; /* mov (orr Vd,Vn,Vn) */
+      ORC_ASM_CODE(p, "  mov %s, %s\n",
+          orc_neon64_reg_name_vector (dest->alloc, dest->size, is_quad),
+          orc_neon64_reg_name_vector (src->alloc, src->size, is_quad));
+      if (is_quad) {
+        movcode |= 1 << 30;
+      }
+      movcode |= (src->alloc & 0x1f) << 16;
+      movcode |= (src->alloc & 0x1f) << 5;
+      movcode |= (dest->alloc & 0x1f);
+      orc_arm_emit (p, movcode);
+    }
     return;
   }
 

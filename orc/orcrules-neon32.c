@@ -23,6 +23,7 @@ static void orc_neon32_emit_loadib (OrcCompiler *compiler, OrcVariable *dest, in
 static void orc_neon32_emit_loadiw (OrcCompiler *compiler, OrcVariable *dest, int param);
 static void orc_neon32_emit_loadiq (OrcCompiler *compiler, OrcVariable *dest, long long param);
 static void orc_neon32_emit_loadpq (OrcCompiler *compiler, int dest, int param);
+static void orc_neon32_emit_mov_is_quad (OrcCompiler *p, int is_quad, OrcVariable d, OrcVariable s);
 
 const OrcNeonInsn orc_neon32_insns[_ORC_NEON_OP_MAX_] = {
   [ORC_NEON_OP_ABSB]      = { "vabs.s8"     ,0xf3b10300, 3 },
@@ -1230,7 +1231,10 @@ static const ShiftInfo immshift_info_32[] = {
   { 0xf3900010, "vshr.u16", TRUE, 16, 2 },
   { 0xf2a00510, "vshl.i32", FALSE, 32, 1 },
   { 0xf2a00010, "vshr.s32", TRUE, 32, 1 },
-  { 0xf3a00010, "vshr.u32", TRUE, 32, 1 }
+  { 0xf3a00010, "vshr.u32", TRUE, 32, 1 },
+  { 0xf2800590, "vshl.i64", FALSE, 64, 0 }, /* shlq */
+  { 0xf2800090, "vshr.s64", TRUE, 64, 0 },  /* shrsq */
+  { 0xf3800090, "vshr.u64", TRUE, 64, 0 }   /* shruq */
 };
 
 static const ShiftInfo regshift_info_32[] = {
@@ -1242,7 +1246,10 @@ static const ShiftInfo regshift_info_32[] = {
   { 0xf3100400, "vshl.u16", TRUE, 0, 2 },
   { 0xf3200400, "vshl.u32", FALSE, 0, 1 },
   { 0xf2200400, "vshl.s32", TRUE, 0, 1 },
-  { 0xf3200400, "vshl.u32", TRUE, 0, 1 }
+  { 0xf3200400, "vshl.u32", TRUE, 0, 1 },
+  { 0xf3300400, "vshl.u64", FALSE, 0, 0 }, /* shlq */
+  { 0xf2300400, "vshl.s64", TRUE, 0, 0 },  /* shrsq */
+  { 0xf3300400, "vshl.u64", TRUE, 0, 0 }   /* shruq */
 };
 
 void
@@ -1258,6 +1265,15 @@ orc_neon32_emit_shift (OrcCompiler *const p, int type,
   }
   if (shift >= immshift_info_32[type].bits) {
     ORC_COMPILER_ERROR(p, "shift too large");
+    return;
+  }
+
+  if (shift == 0 && immshift_info_32[type].negate) {
+    /* Same reasoning as orc_neon64_emit_shift: the ARMv7 immediate
+     * right-shift encoding cannot represent shift=0. */
+    if (dest->alloc != src->alloc) {
+      orc_neon32_emit_mov_is_quad (p, is_quad, *dest, *src);
+    }
     return;
   }
 

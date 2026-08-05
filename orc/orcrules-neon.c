@@ -660,6 +660,9 @@ orc_compiler_neon_register_rules (OrcTarget *target)
   orc_rule_register (rule_set, "shll", orc_neon_rule_shift, (void *)6);
   orc_rule_register (rule_set, "shrsl", orc_neon_rule_shift, (void *)7);
   orc_rule_register (rule_set, "shrul", orc_neon_rule_shift, (void *)8);
+  orc_rule_register (rule_set, "shlq", orc_neon_rule_shift, (void *)9);
+  orc_rule_register (rule_set, "shrsq", orc_neon_rule_shift, (void *)10);
+  orc_rule_register (rule_set, "shruq", orc_neon_rule_shift, (void *)11);
 
   orc_rule_register (rule_set, "andnb", orc_neon_rule_andn, (void *)3);
   orc_rule_register (rule_set, "andnw", orc_neon_rule_andn, (void *)2);
