@@ -2,7 +2,7 @@
 ======
 
  - Add AVX512 support (Jorge Zapata)
-   neon: add divluw rule (used in GStreamer's compositor, videomixer, gaudieffects and alpha-blending code paths) (Jeongkeun Kim)
+ - neon: add divluw rule (used in GStreamer's compositor, videomixer, gaudieffects and alpha-blending code paths) (Jeongkeun Kim)
  - neon: add mulslq, mululq rules, shlq, shrsq, shruq (used in GStreamer's audio processing element) (Jeongkeun Kim)
  - orccodemem: Invalidate code chunks when recycling for QEMU (Jorge Zapata)
  - orcprogram-c: Allow negative constants (Carlos Falgueras García)
