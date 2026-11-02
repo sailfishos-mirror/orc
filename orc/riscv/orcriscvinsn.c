@@ -1601,15 +1601,18 @@ orc_riscv_insn_emit_flush_subnormals (OrcCompiler *c, int element_width,
   orc_riscv_insn_emit_vand_vx (c, ORC_RISCV_V0, c->gp_tmpreg, vs);
   orc_riscv_insn_emit_load_immediate (c, c->gp_tmpreg, upper);
 
+  /* Select between the flushed value and the original with vmerge: a
+   * masked copy would leave the inactive elements up to the mask policy,
+   * and the backend runs with mask-agnostic vtype. */
   if (vs != vd) {
     orc_riscv_insn_emit_vmsne_vx (c, ORC_RISCV_V0, ORC_RISCV_V0,
         ORC_RISCV_ZERO);
     orc_riscv_insn_emit_vand_vx (c, vd, c->gp_tmpreg, vs);
-    orc_riscv_insn_emit_vadd_vim (c, vd, vs, 0);
+    orc_riscv_insn_emit_vmerge_vvm (c, vd, vd, vs);
   } else {
     orc_riscv_insn_emit_vmseq_vx (c, ORC_RISCV_V0, ORC_RISCV_V0,
         ORC_RISCV_ZERO);
     orc_riscv_insn_emit_vand_vx (c, vtemp, c->gp_tmpreg, vs);
-    orc_riscv_insn_emit_vadd_vim (c, vd, vtemp, 0);
+    orc_riscv_insn_emit_vmerge_vvm (c, vd, vs, vtemp);
   }
 }
