@@ -1514,6 +1514,15 @@ orc_riscv_insn_emit_vmerge_vvm (OrcCompiler *c,
 }
 
 void
+orc_riscv_insn_emit_vmerge_vim (OrcCompiler *c,
+    OrcRiscvRegister vd, OrcRiscvRegister vs2, int imm)
+{
+  ORC_ASM_CODE (c, "  vmerge.vim %s, %s, %d, v0\n", NAME (vd), NAME (vs2), imm);
+  orc_riscv_insn_vop (c, 0b010111, 0, VREG (vs2), imm & 0b11111, OPIVI,
+      VREG (vd));
+}
+
+void
 orc_riscv_insn_emit_shift_add (OrcCompiler *c, OrcRiscvRegister rd,
     orc_uint32 imm)
 {

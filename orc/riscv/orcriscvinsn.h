@@ -193,6 +193,7 @@ ORC_API void orc_riscv_insn_emit_vid_v (OrcCompiler *c, OrcRiscvRegister vd);
 ORC_API void orc_riscv_insn_emit_vluxei32_v (OrcCompiler *c, OrcRiscvRegister vd, OrcRiscvRegister rs1, OrcRiscvRegister vs2);
 ORC_API void orc_riscv_insn_emit_vrgather_vv (OrcCompiler *c, OrcRiscvRegister vd, OrcRiscvRegister vs2, OrcRiscvRegister vs1);
 ORC_API void orc_riscv_insn_emit_vmerge_vvm (OrcCompiler *c, OrcRiscvRegister vd, OrcRiscvRegister vs2, OrcRiscvRegister vs1);
+ORC_API void orc_riscv_insn_emit_vmerge_vim (OrcCompiler *c, OrcRiscvRegister vd, OrcRiscvRegister vs2, int imm);
 
 /* Pseudoinstructions */
 ORC_API void orc_riscv_insn_emit_shift_add (OrcCompiler *c, OrcRiscvRegister rd, orc_uint32 imm);
