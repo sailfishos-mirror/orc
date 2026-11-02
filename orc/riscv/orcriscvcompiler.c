@@ -157,6 +157,11 @@ orc_riscv_compiler_compute_vtype (OrcCompiler *c, OrcRiscvSEW element_width,
 
   vtype.vsew = element_width;
   vtype.vlmul = (c->loop_shift + insn_shift + vtype.vsew - 3) & 0x7;
+  /* Tail and mask agnostic: the elements past vl and the inactive
+   * elements of a masked instruction may be overwritten with all 1s, so
+   * rules must not rely on them being preserved. Use vmerge to select
+   * instead of a masked arithmetic instruction. The exception is the
+   * accumulators, see orc_riscv_compiler_emit_loop (). */
   vtype.vma = TRUE;
   vtype.vta = TRUE;
 
@@ -327,6 +332,11 @@ orc_riscv_compiler_emit_loop (OrcCompiler *c, OrcRiscvVtype vtype)
       } else {
         vtype = orc_riscv_compiler_compute_vtype (c, old_vtype.vsew, 0);
       }
+
+      /* Accumulators are reduced over VLMAX once the loop is done, so the
+       * elements past vl must survive the last, partial strip. */
+      if (c->vars[insn->dest_args[0]].vartype == ORC_VAR_TYPE_ACCUMULATOR)
+        vtype.vta = FALSE;
 
       if (*(orc_uint8 *) & old_vtype != *(orc_uint8 *) & vtype) {
         if (c->insn_shift)
