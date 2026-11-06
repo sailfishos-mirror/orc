@@ -36,7 +36,8 @@ Features:
  - An application can add rules for converting existing or new opcodes
    to binary code for a specific target.
 
- - Current targets: SSE, MMX, MIPS, Altivec, NEON, and TI C64x+.
+ - Current targets: SSE, MMX, AVX, AVX-512, NEON (32-bit and 64-bit
+   ARM), MIPS, Altivec, RISC-V Vector, LoongArch LSX/LASX, and TI C64x+.
    (The c64x target only produces source code.)
 
  - Programs can optionally be emulated, which is useful for testing, or
